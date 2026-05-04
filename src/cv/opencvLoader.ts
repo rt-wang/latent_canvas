@@ -1,13 +1,17 @@
-// Loads OpenCV.js via a <script> tag from the official CDN and resolves
-// once `cv.Mat` is available. We intentionally don't bundle @techstark's
-// CommonJS build through Vite — its UMD wrapper assumes a `module` global
-// at runtime and crashes with "Cannot set properties of undefined" in a
-// browser ESM context. The CDN script is the supported path.
+// Loads OpenCV.js from /opencv.js (served out of /public). This specific
+// Emscripten build only initializes reliably when a global `cv` module object
+// exists before the script executes, so we seed `window.cv` up front and
+// resolve once `cv.Mat` is callable.
 
-const CDN_URL = 'https://docs.opencv.org/4.10.0/opencv.js';
+const URL = '/opencv.js';
+const TIMEOUT_MS = 60000;
 
 let _cv: any | null = null;
 let _readyPromise: Promise<any> | null = null;
+
+function isReady(cv: any): boolean {
+  return !!(cv && typeof cv.Mat === 'function' && cv.CV_8UC1 !== undefined);
+}
 
 export function whenReady(): Promise<any> {
   if (_cv) return Promise.resolve(_cv);
@@ -15,50 +19,66 @@ export function whenReady(): Promise<any> {
 
   _readyPromise = new Promise((resolve, reject) => {
     const w = window as any;
+    const seed = w.cv && typeof w.cv === 'object' ? w.cv : {};
+    w.cv = seed;
 
-    const settle = (cv: any) => { _cv = cv; resolve(cv); };
+    if (isReady(w.cv)) {
+      _cv = w.cv;
+      resolve(_cv);
+      return;
+    }
 
-    // Already loaded (HMR or repeat init).
-    if (w.cv?.Mat) { settle(w.cv); return; }
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      fail(new Error(`OpenCV.js did not initialize within ${TIMEOUT_MS}ms`));
+    }, TIMEOUT_MS);
 
-    // Script may already be in flight from an earlier mount.
+    const finish = (maybeCv?: any) => {
+      const cv = maybeCv ?? w.cv;
+      if (settled || !isReady(cv)) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      _cv = cv;
+      resolve(cv);
+    };
+
+    const fail = (err: unknown) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      _readyPromise = null;
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+
+    const previousInit =
+      typeof seed.onRuntimeInitialized === 'function' ? seed.onRuntimeInitialized : null;
+    seed.onRuntimeInitialized = () => {
+      previousInit?.();
+      finish(w.cv);
+    };
+
+    const observeCurrent = () => {
+      if (isReady(w.cv)) {
+        finish(w.cv);
+        return;
+      }
+      Promise.resolve(w.cv).then(finish).catch(fail);
+    };
+
     let script = document.querySelector<HTMLScriptElement>('script[data-opencv-loader]');
     if (!script) {
       script = document.createElement('script');
-      script.src = CDN_URL;
+      script.src = URL;
       script.async = true;
       script.dataset.opencvLoader = '1';
-      script.onerror = () => reject(new Error(`Failed to load OpenCV.js from ${CDN_URL}`));
+      script.addEventListener('error', () => {
+        fail(new Error(`Failed to load OpenCV.js from ${URL}`));
+      });
+      script.addEventListener('load', observeCurrent);
       document.head.appendChild(script);
     }
 
-    // OpenCV.js exposes `cv` as a Module-like object as soon as the script
-    // executes, but `cv.Mat` only appears after the WASM runtime initializes.
-    // The supported hook is `cv.onRuntimeInitialized`.
-    const wireRuntime = () => {
-      const cv = w.cv;
-      if (!cv) return false;
-      if (cv.Mat) { settle(cv); return true; }
-      cv.onRuntimeInitialized = () => settle(w.cv);
-      return true;
-    };
-
-    if (!wireRuntime()) {
-      // Script hasn't executed yet — wait for load, then wire.
-      script.addEventListener('load', () => {
-        if (!wireRuntime()) {
-          // Defensive: poll briefly in case `cv` hasn't been assigned yet.
-          const t0 = Date.now();
-          const id = setInterval(() => {
-            if (wireRuntime()) clearInterval(id);
-            else if (Date.now() - t0 > 15000) {
-              clearInterval(id);
-              reject(new Error('OpenCV.js loaded but `cv` global never appeared'));
-            }
-          }, 50);
-        }
-      });
-    }
+    observeCurrent();
   });
 
   return _readyPromise;
