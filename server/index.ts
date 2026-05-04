@@ -1,4 +1,5 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
 import express, { type Response } from 'express';
 import cors from 'cors';
 import Anthropic from '@anthropic-ai/sdk';

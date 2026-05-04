@@ -3,6 +3,12 @@ const TIMEOUT_MS = 60000;
 let cvModule = null;
 let cvReadyPromise = null;
 let analyzer = null;
+let initWidth = 0;
+let initHeight = 0;
+
+function emitLog(stage, detail) {
+  self.postMessage({ type: 'log', stage, detail });
+}
 
 function isReady(cv) {
   return !!(cv && typeof cv.Mat === 'function' && cv.CV_8UC1 !== undefined);
@@ -21,24 +27,31 @@ function waitForCv() {
     const scope = self;
     const seed = scope.cv && typeof scope.cv === 'object' ? scope.cv : {};
     scope.cv = seed;
+    emitLog('worker-init', `seeded cv object; hasMat=${isReady(scope.cv)}`);
 
     if (isReady(scope.cv)) {
       cvModule = scope.cv;
+      emitLog('worker-init', 'cv already ready before importScripts');
       resolve(cvModule);
       return;
     }
 
     let settled = false;
+    let lastHeartbeatAt = Date.now();
+    let unwrapping = false;
     const timeoutId = self.setTimeout(() => {
       fail(new Error(`OpenCV.js did not initialize within ${TIMEOUT_MS}ms`));
     }, TIMEOUT_MS);
+    let pollId = null;
 
     const finish = (maybeCv) => {
       const cv = maybeCv ?? scope.cv;
       if (settled || !isReady(cv)) return;
       settled = true;
       self.clearTimeout(timeoutId);
+      if (pollId !== null) self.clearInterval(pollId);
       cvModule = cv;
+      emitLog('worker-ready', 'OpenCV runtime initialized');
       resolve(cv);
     };
 
@@ -46,7 +59,9 @@ function waitForCv() {
       if (settled) return;
       settled = true;
       self.clearTimeout(timeoutId);
+      if (pollId !== null) self.clearInterval(pollId);
       cvReadyPromise = null;
+      emitLog('worker-error', getErrorMessage(error));
       reject(error instanceof Error ? error : new Error(String(error)));
     };
 
@@ -54,22 +69,75 @@ function waitForCv() {
       typeof seed.onRuntimeInitialized === 'function' ? seed.onRuntimeInitialized : null;
     seed.onRuntimeInitialized = () => {
       previousInit?.();
+      emitLog('worker-init', 'onRuntimeInitialized fired');
       finish(scope.cv);
     };
 
     try {
+      emitLog('worker-init', 'importScripts(/opencv.js) starting');
       self.importScripts('/opencv.js');
+      emitLog('worker-init', 'importScripts(/opencv.js) returned');
     } catch (error) {
       fail(error);
       return;
     }
 
     if (isReady(scope.cv)) {
+      emitLog('worker-init', 'cv ready immediately after importScripts');
       finish(scope.cv);
       return;
     }
 
-    Promise.resolve(scope.cv).then(finish).catch(fail);
+    emitLog('worker-init', 'waiting for thenable/runtime callback');
+
+    const tryUnwrap = () => {
+      const current = scope.cv;
+      const hasThen = current && typeof current.then === 'function';
+      if (!hasThen || unwrapping) return;
+      unwrapping = true;
+      emitLog('worker-init', 'attempting thenable unwrap');
+      try {
+        current.then((unwrapped) => {
+          unwrapping = false;
+          if (unwrapped && unwrapped !== scope.cv) {
+            scope.cv = unwrapped;
+            emitLog('worker-init', 'unwrapped thenable → cv');
+          } else {
+            emitLog('worker-init', 'thenable callback returned module');
+          }
+          finish(unwrapped ?? scope.cv);
+        }, (error) => {
+          unwrapping = false;
+          fail(error);
+        });
+      } catch (error) {
+        unwrapping = false;
+        fail(error);
+      }
+    };
+
+    pollId = self.setInterval(() => {
+      if (settled) return;
+      const current = scope.cv;
+      if (isReady(current)) {
+        finish(current);
+        return;
+      }
+
+      if (Date.now() - lastHeartbeatAt >= 2000) {
+        lastHeartbeatAt = Date.now();
+        emitLog(
+          'worker-init',
+          `heartbeat hasThen=${Boolean(current && typeof current.then === 'function')} hasMat=${Boolean(
+            current && typeof current.Mat === 'function',
+          )}`,
+        );
+      }
+
+      tryUnwrap();
+    }, 100);
+
+    tryUnwrap();
   });
 
   return cvReadyPromise;
@@ -142,9 +210,11 @@ self.onmessage = async (event) => {
 
   if (message.type === 'init') {
     try {
+      emitLog('init', `dimensions=${message.width}x${message.height}`);
       const cv = await waitForCv();
-      analyzer?.destroy();
-      analyzer = new OpenCvAnalyzer(cv, message.width, message.height);
+      initWidth = message.width;
+      initHeight = message.height;
+      emitLog('init', 'runtime ready; signaling main thread');
       self.postMessage({ type: 'ready' });
     } catch (error) {
       self.postMessage({ type: 'error', message: getErrorMessage(error) });
@@ -153,8 +223,15 @@ self.onmessage = async (event) => {
   }
 
   if (message.type === 'analyze') {
-    if (!analyzer) return;
     try {
+      if (!cvModule) {
+        throw new Error('OpenCV runtime is not ready.');
+      }
+      if (!analyzer) {
+        emitLog('analyze-init', `creating analyzer ${initWidth}x${initHeight}`);
+        analyzer = new OpenCvAnalyzer(cvModule, initWidth, initHeight);
+        emitLog('analyze-init', 'analyzer created');
+      }
       const result = analyzer.analyze(message.rgbaBuffer, message.edgeThreshold01);
       self.postMessage(
         {

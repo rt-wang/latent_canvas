@@ -7,6 +7,7 @@ import { SectionLabel } from './ui/Label';
 const ANALYSIS_W = 320;
 const ANALYSIS_H = 180;
 const ANALYSIS_INTERVAL_MS = 1000 / 24;
+const CV_STALL_MS = 15000;
 const UI_SYNC_MS = 250;
 
 type Props = {
@@ -21,6 +22,7 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const [cvStatus, setCvStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [cvDetail, setCvDetail] = useState<string | null>(null);
 
   // Resize display canvas to match container, maintaining 16:9 aspect.
   useEffect(() => {
@@ -46,6 +48,7 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
   useEffect(() => {
     if (!videoReady) {
       setCvStatus('idle');
+      setCvDetail(null);
       setRenderError(null);
       return;
     }
@@ -59,11 +62,13 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
     const actx = analysis.getContext('2d', { willReadFrequently: true });
     if (!actx) {
       setRenderError('Could not create analysis canvas context.');
+      setCvDetail('analysis canvas initialization failed');
       setCvStatus('error');
       return;
     }
 
     setRenderError(null);
+    setCvDetail('starting worker');
     setCvStatus('loading');
 
     const store = useConfigStore.getState;
@@ -90,7 +95,18 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
     let frameCount = 0;
     let lastFps = performance.now();
     let lastUiSync = lastFps;
+    let lastWorkerStage = 'starting worker';
     const worker = new Worker('/opencv-worker.js');
+    const stallTimeoutId = window.setTimeout(() => {
+      if (disposed || workerReady) return;
+      workerReady = false;
+      analysisPending = false;
+      console.error('[opencv-worker] startup stalled:', lastWorkerStage);
+      setCvStatus('error');
+      setCvDetail(lastWorkerStage);
+      setRenderError(`OpenCV startup stalled after ${CV_STALL_MS / 1000}s.`);
+      worker.terminate();
+    }, CV_STALL_MS);
 
     worker.onmessage = (workerEvent: MessageEvent) => {
       if (disposed) return;
@@ -98,7 +114,22 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
 
       if (message.type === 'ready') {
         workerReady = true;
+        window.clearTimeout(stallTimeoutId);
+        console.info('[opencv-worker] ready');
+        setCvDetail(null);
         setCvStatus('ready');
+        return;
+      }
+
+      if (message.type === 'log') {
+        lastWorkerStage = `${message.stage}: ${message.detail}`;
+        console.info(`[opencv-worker] ${message.stage}: ${message.detail}`);
+        setCvDetail(lastWorkerStage);
+        if (message.stage === 'worker-ready') {
+          workerReady = true;
+          window.clearTimeout(stallTimeoutId);
+          setCvStatus('ready');
+        }
         return;
       }
 
@@ -119,17 +150,27 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
       if (message.type === 'error') {
         workerReady = false;
         analysisPending = false;
+        window.clearTimeout(stallTimeoutId);
+        console.error('[opencv-worker] error:', message.message);
+        setCvDetail(lastWorkerStage);
         setCvStatus('error');
         setRenderError(message.message ?? 'OpenCV worker failed.');
       }
     };
 
-    worker.onerror = () => {
+    worker.onerror = (event) => {
       if (disposed) return;
       workerReady = false;
       analysisPending = false;
+      window.clearTimeout(stallTimeoutId);
+      const detail =
+        typeof event.message === 'string' && event.message
+          ? `${event.message}${event.filename ? ` (${event.filename}:${event.lineno}:${event.colno})` : ''}`
+          : 'OpenCV worker failed.';
+      console.error('[opencv-worker] uncaught error:', event);
+      setCvDetail(lastWorkerStage);
       setCvStatus('error');
-      setRenderError('OpenCV worker failed.');
+      setRenderError(detail);
     };
 
     worker.postMessage({ type: 'init', width: ANALYSIS_W, height: ANALYSIS_H });
@@ -185,6 +226,7 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
 
     return () => {
       disposed = true;
+      window.clearTimeout(stallTimeoutId);
       cancelAnimationFrame(raf);
       worker.postMessage({ type: 'dispose' });
       worker.terminate();
@@ -303,12 +345,22 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
           <Overlay>
             <SectionLabel light style={{ marginBottom: 8 }}>Computer Vision</SectionLabel>
             <div style={{ color: '#fff', fontSize: 14 }}>Loading OpenCV.js…</div>
+            {cvDetail && (
+              <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 6, maxWidth: 420 }}>
+                {cvDetail}
+              </div>
+            )}
           </Overlay>
         )}
         {!videoError && videoReady && renderError && (
           <Overlay>
             <SectionLabel light style={{ marginBottom: 8 }}>Computer Vision</SectionLabel>
             <div style={{ color: '#fff', fontSize: 13, maxWidth: 360 }}>{renderError}</div>
+            {cvDetail && (
+              <div style={{ color: 'rgba(255,255,255,0.72)', fontSize: 11, marginTop: 6, maxWidth: 420 }}>
+                {cvDetail}
+              </div>
+            )}
           </Overlay>
         )}
       </div>
