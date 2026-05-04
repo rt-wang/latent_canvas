@@ -5,6 +5,20 @@ Get a single user to type an abstract prompt and see their webcam feed transform
 
 **Definition of done:** webcam → hidden canvas → CV signals → effects controlled by interpolated config that the LLM produces from prompts.
 
+⏺ The objective of Phase 1 is to prove the core loop end-to-end: type an abstract prompt → see your webcam
+  transformed in real time.
+
+  Concretely, by the end of Phase 1 you should have:
+
+  - Webcam feed running through a hidden analysis canvas at 320×180.
+  - A handful of working effects (tint, saturation, trails, edge glow, noise, pixelation) applied to the visible
+   canvas.
+  - A backend endpoint that turns prompts into validated VibeConfig JSON.
+  - Smooth lerp between current and target config so transitions feel directed, not snapped.
+
+  Everything else from design.md — audio, presets, timeline, particles, WebGL — is deferred. Phase 1 is the
+  smallest thing that demonstrates "language becomes live image."
+
 ---
 
 ## Step 0 — Project Setup
