@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Latent Canvas — Design System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; background: #ede8de; }
+
+  :root {
+    /* === BACKGROUNDS === */
+    --bg-page:     #ede8de;   /* warm cream — canvas bg */
+    --bg-base:     #f2ede3;   /* card / panel base */
+    --bg-raised:   #f7f3eb;   /* elevated surface */
+    --bg-overlay:  #ffffff;   /* modal / topmost */
+    --bg-sidebar:  #171d16;   /* deep forest green sidebar */
+    --bg-sidebar-hover: #1f2a1e;
+    --bg-sidebar-active: #243022;
+
+    /* === FOREGROUND === */
+    --fg-primary:  #1c1c18;   /* near-black warm */
+    --fg-secondary:#5c5a52;   /* mid warm gray */
+    --fg-muted:    #9c9a90;   /* muted warm */
+    --fg-ghost:    #d8d3c8;   /* borders / dividers */
+    --fg-on-dark:  #c8d4c0;   /* text on sidebar */
+    --fg-on-dark-muted: #6a7a62;
+    --fg-on-dark-active: #e8f0e0;
+
+    /* === ACCENT — sage olive green === */
+    --accent:        #4d6142;   /* primary CTA green */
+    --accent-hover:  #3d5033;
+    --accent-light:  #dce8d4;   /* accent tint for chips/highlights */
+    --accent-border: #a8c098;
+
+    /* === SIGNAL COLORS === */
+    --signal-teal:  #3d7a72;
+    --signal-amber: #b87840;
+    --signal-red:   #a84030;
+    --signal-blue:  #4868a8;
+    --signal-purple:#7858a8;
+
+    /* === TYPE === */
+    --font-ui:   'DM Sans', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+
+    /* === SPACING === */
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+    --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+    --sp-12: 48px; --sp-16: 64px;
+
+    /* === RADIUS === */
+    --r-sm: 4px; --r-md: 7px; --r-lg: 11px; --r-xl: 16px; --r-full: 999px;
+
+    /* === SHADOWS === */
+    --shadow-sm:  0 1px 3px rgba(60,50,30,0.08), 0 1px 2px rgba(60,50,30,0.06);
+    --shadow-md:  0 3px 10px rgba(60,50,30,0.10), 0 1px 4px rgba(60,50,30,0.06);
+    --shadow-lg:  0 8px 28px rgba(60,50,30,0.13), 0 2px 8px rgba(60,50,30,0.07);
+    --shadow-card: 0 1px 4px rgba(60,50,30,0.09), 0 0 0 1px rgba(60,50,30,0.06);
+  }
+</style>
+</head>
+<body>
+<script type="text/babel">
+
+const { useState, useEffect, useRef } = React;
+
+/* ─── TOKEN CONSTANTS ─── */
+const COLORS = [
+  { name: "page",          hex: "#ede8de", label: "bg/page",         group: "Background" },
+  { name: "base",          hex: "#f2ede3", label: "bg/base",         group: "Background" },
+  { name: "raised",        hex: "#f7f3eb", label: "bg/raised",       group: "Background" },
+  { name: "overlay",       hex: "#ffffff", label: "bg/overlay",      group: "Background" },
+  { name: "sidebar",       hex: "#171d16", label: "bg/sidebar",      group: "Background" },
+  { name: "ghost",         hex: "#d8d3c8", label: "fg/ghost",        group: "Foreground" },
+  { name: "muted",         hex: "#9c9a90", label: "fg/muted",        group: "Foreground" },
+  { name: "secondary",     hex: "#5c5a52", label: "fg/secondary",    group: "Foreground" },
+  { name: "primary",       hex: "#1c1c18", label: "fg/primary",      group: "Foreground" },
+  { name: "on-dark",       hex: "#c8d4c0", label: "fg/on-dark",      group: "Foreground" },
+  { name: "accent",        hex: "#4d6142", label: "accent",          group: "Accent" },
+  { name: "accent-light",  hex: "#dce8d4", label: "accent/light",    group: "Accent" },
+  { name: "accent-border", hex: "#a8c098", label: "accent/border",   group: "Accent" },
+  { name: "teal",          hex: "#3d7a72", label: "signal/teal",     group: "Signal" },
+  { name: "amber",         hex: "#b87840", label: "signal/amber",    group: "Signal" },
+  { name: "red",           hex: "#a84030", label: "signal/red",      group: "Signal" },
+  { name: "blue",          hex: "#4868a8", label: "signal/blue",     group: "Signal" },
+];
+
+/* ─── DS SECTION LABEL ─── */
+function DSLabel({ children, light }) {
+  return (
+    <div style={{
+      fontFamily: "var(--font-mono)", fontSize: 9.5,
+      letterSpacing: "0.14em", textTransform: "uppercase",
+      color: light ? "var(--fg-on-dark-muted)" : "var(--fg-muted)",
+      marginBottom: 12,
+    }}>{children}</div>
+  );
+}
+
+/* ─── COLOR PALETTE ARTBOARD ─── */
+function PaletteArtboard() {
+  const groups = [...new Set(COLORS.map(c => c.group))];
+  return (
+    <div style={{ fontFamily: "var(--font-ui)", padding: 28, background: "var(--bg-base)", height: "100%", display: "flex", flexDirection: "column", gap: 24 }}>
+      {groups.map(group => (
+        <div key={group}>
+          <DSLabel>{group}</DSLabel>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {COLORS.filter(c => c.group === group).map(c => (
+              <div key={c.name} style={{ display: "flex", flexDirection: "column", gap: 6, width: 80 }}>
+                <div style={{
+                  width: 80, height: 48, borderRadius: "var(--r-md)",
+                  background: c.hex,
+                  border: "1px solid rgba(0,0,0,0.08)",
+                  boxShadow: "var(--shadow-sm)",
+                }} />
+                <div style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--fg-secondary)", lineHeight: 1.5 }}>
+                  <div style={{ color: "var(--fg-primary)", fontWeight: 500, fontSize: 10.5 }}>{c.label}</div>
+                  <div style={{ color: "var(--fg-muted)" }}>{c.hex}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── TYPOGRAPHY ARTBOARD ─── */
+function TypeArtboard() {
+  const scale = [
+    { name: "display",    size: 34, weight: 300, font: "DM Sans",  sample: "make it feel like dissolving" },
+    { name: "heading-1",  size: 22, weight: 500, font: "DM Sans",  sample: "Live Visual Rendering" },
+    { name: "heading-2",  size: 16, weight: 500, font: "DM Sans",  sample: "Visual Configuration" },
+    { name: "body",       size: 13, weight: 400, font: "DM Sans",  sample: "The renderer applies effects to live webcam frames using interpolated config values." },
+    { name: "body-sm",    size: 12, weight: 400, font: "DM Sans",  sample: "Smooth config transitions at 0.05 lerp per frame" },
+    { name: "label",      size: 11, weight: 500, font: "DM Sans",  sample: "PROMPT HISTORY · CONFIG INSPECTOR · SIGNALS" },
+    { name: "mono-md",    size: 12, weight: 400, font: "DM Mono",  sample: `"saturation": 0.35,  "contrast": 0.48` },
+    { name: "mono-sm",    size: 10, weight: 400, font: "DM Mono",  sample: `edgeDensity → hiHatRate · motionAmount → distortion` },
+  ];
+  return (
+    <div style={{ fontFamily: "var(--font-ui)", padding: 28, background: "var(--bg-base)", display: "flex", flexDirection: "column", gap: 0 }}>
+      <DSLabel>Type Scale</DSLabel>
+      {scale.map((s, i) => (
+        <div key={s.name} style={{
+          display: "flex", gap: 16, alignItems: "baseline",
+          borderBottom: `1px solid var(--fg-ghost)`,
+          padding: "14px 0",
+        }}>
+          <div style={{ width: 82, flexShrink: 0, fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--fg-muted)", paddingTop: 3, lineHeight: 1.6 }}>
+            <div style={{ color: "var(--fg-secondary)" }}>{s.name}</div>
+            <div>{s.size}px · {s.weight}</div>
+          </div>
+          <div style={{
+            fontSize: s.size, fontWeight: s.weight,
+            fontFamily: s.font === "DM Mono" ? "var(--font-mono)" : "var(--font-ui)",
+            color: "var(--fg-primary)", lineHeight: 1.25,
+          }}>{s.sample}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ─── SPACING + RADIUS + SHADOW ARTBOARD ─── */
+function SpacingArtboard() {
+  const spaces = [4,8,12,16,20,24,32,40,48,64];
+  const radii = [
+    { name: "sm", val: "4px" }, { name: "md", val: "7px" },
+    { name: "lg", val: "11px" }, { name: "xl", val: "16px" }, { name: "full", val: "999px" },
+  ];
+  return (
+    <div style={{ fontFamily: "var(--font-ui)", padding: 28, background: "var(--bg-base)", display: "flex", flexDirection: "column", gap: 28 }}>
+      <div>
+        <DSLabel>Spacing Scale</DSLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+          {spaces.map(sp => (
+            <div key={sp} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 32, fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--fg-muted)", textAlign: "right" }}>{sp}</div>
+              <div style={{ height: 6, background: "var(--accent)", borderRadius: 2, opacity: 0.7, width: sp * 1.8 }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <DSLabel>Border Radius</DSLabel>
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          {radii.map(r => (
+            <div key={r.name} style={{ display: "flex", flexDirection: "column", gap: 7, alignItems: "center" }}>
+              <div style={{
+                width: 44, height: 44, background: "var(--bg-raised)",
+                border: "1px solid var(--fg-ghost)", borderRadius: r.val,
+                boxShadow: "var(--shadow-sm)",
+              }} />
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--fg-muted)", textAlign: "center", lineHeight: 1.5 }}>
+                <div style={{ color: "var(--fg-secondary)" }}>{r.name}</div>
+                <div>{r.val}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div>
+        <DSLabel>Shadows</DSLabel>
+        <div style={{ display: "flex", gap: 16 }}>
+          {[
+            { name: "sm",   shadow: "var(--shadow-sm)" },
+            { name: "md",   shadow: "var(--shadow-md)" },
+            { name: "lg",   shadow: "var(--shadow-lg)" },
+            { name: "card", shadow: "var(--shadow-card)" },
+          ].map(s => (
+            <div key={s.name} style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "center" }}>
+              <div style={{
+                width: 56, height: 44, background: "var(--bg-overlay)",
+                borderRadius: "var(--r-md)", boxShadow: s.shadow,
+              }} />
+              <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--fg-muted)" }}>{s.name}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── COMPONENTS ARTBOARD ─── */
+function ComponentsArtboard() {
+  const [promptVal, setPromptVal] = useState("make the silhouettes feel sacred and slow");
+  const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("motion");
+  const tabs = ["palette","motion","edges","particles","distortion"];
+
+  function fakeSubmit() {
+    setLoading(true);
+    setTimeout(() => setLoading(false), 1800);
+  }
+
+  return (
+    <div style={{ fontFamily: "var(--font-ui)", padding: 28, background: "var(--bg-base)", display: "flex", flexDirection: "column", gap: 28 }}>
+
+      {/* Buttons */}
+      <div>
+        <DSLabel>Buttons</DSLabel>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <button style={btnPrimary}>✦ Generate</button>
+          <button style={btnSecondary}>↺ Remix</button>
+          <button style={btnGhost}>✧ Surprise Me</button>
+          <button style={btnDanger}>Reset All</button>
+          <button style={{ ...btnPrimary, opacity: 0.5, cursor: "not-allowed" }} disabled>Processing…</button>
+        </div>
+      </div>
+
+      {/* Prompt Input */}
+      <div>
+        <DSLabel>Prompt Input</DSLabel>
+        <div style={{ maxWidth: 440 }}>
+          <div style={promptWrapStyle}>
+            <textarea
+              value={promptVal}
+              onChange={e => setPromptVal(e.target.value)}
+              style={promptInputStyle}
+              rows={2}
+              placeholder="describe the vibe…"
+            />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px 10px" }}>
+              {loading
+                ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-muted)", display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: "var(--accent)", animation: "lcPulse 1s infinite" }} />
+                    translating vibe…
+                  </span>
+                : <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-muted)" }}>⏎ to generate</span>
+              }
+              <button onClick={fakeSubmit} style={{ ...btnPrimary, padding: "5px 14px", fontSize: 11 }}>✦ Generate</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Sliders — config inspector style */}
+      <div>
+        <DSLabel>Parameter Sliders</DSLabel>
+        <div style={{ background: "var(--bg-overlay)", borderRadius: "var(--r-lg)", border: "1px solid var(--fg-ghost)", boxShadow: "var(--shadow-sm)", maxWidth: 340 }}>
+          {/* Tab row */}
+          <div style={{ display: "flex", borderBottom: "1px solid var(--fg-ghost)", padding: "0 4px" }}>
+            {tabs.map(t => (
+              <button key={t} onClick={() => setActiveTab(t)} style={{
+                ...tabStyle,
+                color: activeTab === t ? "var(--fg-primary)" : "var(--fg-muted)",
+                borderBottom: activeTab === t ? `2px solid var(--accent)` : "2px solid transparent",
+                fontWeight: activeTab === t ? 500 : 400,
+              }}>{t}</button>
+            ))}
+          </div>
+          <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 11 }}>
+            {activeTab === "motion" && <>
+              <SliderRow label="Speed"       defaultVal={0.28} />
+              <SliderRow label="Trail Length" defaultVal={0.72} />
+              <SliderRow label="Blur"        defaultVal={0.65} />
+              <SliderRow label="Echo"        defaultVal={0.30} />
+            </>}
+            {activeTab === "edges" && <>
+              <ToggleRow label="Enabled"   defaultVal={true} />
+              <SliderRow label="Threshold" defaultVal={0.25} />
+              <SliderRow label="Glow"      defaultVal={0.60} />
+              <SliderRow label="Thickness" defaultVal={0.30} />
+            </>}
+            {activeTab === "particles" && <>
+              <ToggleRow label="Enabled" defaultVal={true} />
+              <SliderRow label="Density" defaultVal={0.30} />
+              <SliderRow label="Drift"   defaultVal={0.20} />
+              <SliderRow label="Jitter"  defaultVal={0.50} />
+            </>}
+            {activeTab === "distortion" && <>
+              <SliderRow label="Wave"         defaultVal={0.15} />
+              <SliderRow label="Noise"        defaultVal={0.65} />
+              <SliderRow label="Pixelation"   defaultVal={0.35} />
+              <SliderRow label="Displacement" defaultVal={0.20} />
+            </>}
+            {activeTab === "palette" && <>
+              <SliderRow label="Saturation" defaultVal={0.32} />
+              <SliderRow label="Contrast"   defaultVal={0.48} />
+              <SliderRow label="Brightness" defaultVal={0.60} />
+            </>}
+          </div>
+        </div>
+      </div>
+
+      {/* Mood chips */}
+      <div>
+        <DSLabel>Mood Chips</DSLabel>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {["lonely","anxious","nostalgic","sacred","violent","underwater","glitchy","dreamlike"].map(m => (
+            <MoodChip key={m} label={m} />
+          ))}
+        </div>
+      </div>
+
+      {/* Signal indicators */}
+      <div>
+        <DSLabel>Signal Indicators</DSLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, maxWidth: 320 }}>
+          {[
+            { label: "Edge Density",  val: 0.62, color: "var(--signal-teal)" },
+            { label: "Motion Amount", val: 0.48, color: "var(--signal-amber)" },
+            { label: "Brightness",    val: 0.71, color: "var(--fg-secondary)" },
+            { label: "Color Variance",val: 0.36, color: "var(--signal-blue)" },
+          ].map(s => <SignalRow key={s.label} {...s} />)}
+        </div>
+      </div>
+
+      {/* History item */}
+      <div>
+        <DSLabel>Vibe History Item</DSLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: 1, maxWidth: 260 }}>
+          {[
+            { label: "memory decaying",    time: "2m ago",  active: false },
+            { label: "lonely underwater",  time: "14m ago", active: false },
+            { label: "sacred silhouettes", time: "1h ago",  active: true  },
+          ].map(item => <HistoryItem key={item.label} {...item} />)}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+/* ─── SUBCOMPONENTS ─── */
+function SliderRow({ label, defaultVal }) {
+  const [val, setVal] = useState(defaultVal);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--fg-secondary)", width: 96, flexShrink: 0 }}>{label}</span>
+      <input
+        type="range" min={0} max={1} step={0.01} value={val}
+        onChange={e => setVal(parseFloat(e.target.value))}
+        className="lc-slider"
+        style={{ flex: 1 }}
+      />
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-muted)", width: 30, textAlign: "right" }}>{val.toFixed(2)}</span>
+    </div>
+  );
+}
+
+function ToggleRow({ label, defaultVal }) {
+  const [on, setOn] = useState(defaultVal);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--fg-secondary)", width: 96, flexShrink: 0 }}>{label}</span>
+      <div onClick={() => setOn(!on)} style={{
+        width: 32, height: 18, borderRadius: "var(--r-full)",
+        background: on ? "var(--accent)" : "var(--fg-ghost)",
+        position: "relative", cursor: "pointer", transition: "background 0.18s",
+        flexShrink: 0,
+      }}>
+        <div style={{
+          width: 12, height: 12, borderRadius: "50%", background: "#fff",
+          position: "absolute", top: 3, left: on ? 16 : 3, transition: "left 0.18s",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+        }} />
+      </div>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: on ? "var(--accent)" : "var(--fg-muted)" }}>{on ? "true" : "false"}</span>
+    </div>
+  );
+}
+
+function MoodChip({ label }) {
+  const [active, setActive] = useState(false);
+  return (
+    <button onClick={() => setActive(!active)} style={{
+      fontFamily: "var(--font-ui)", fontSize: 11.5, fontWeight: active ? 500 : 400,
+      padding: "4px 12px", borderRadius: "var(--r-full)",
+      border: `1px solid ${active ? "var(--accent-border)" : "var(--fg-ghost)"}`,
+      background: active ? "var(--accent-light)" : "var(--bg-overlay)",
+      color: active ? "var(--accent)" : "var(--fg-secondary)",
+      cursor: "pointer", transition: "all 0.14s",
+      boxShadow: "var(--shadow-sm)",
+    }}>{label}</button>
+  );
+}
+
+function SignalRow({ label, val, color }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--fg-secondary)", width: 108, flexShrink: 0 }}>{label}</span>
+      <div style={{ flex: 1, height: 2, background: "var(--fg-ghost)", borderRadius: 1 }}>
+        <div style={{ width: `${val * 100}%`, height: "100%", background: color, borderRadius: 1, transition: "width 0.3s" }} />
+      </div>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 10.5, color: "var(--fg-muted)", width: 28, textAlign: "right" }}>{val.toFixed(2)}</span>
+    </div>
+  );
+}
+
+function HistoryItem({ label, time, active }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
+      background: active ? "var(--accent-light)" : "transparent",
+      borderRadius: "var(--r-md)", cursor: "pointer",
+      border: active ? "1px solid var(--accent-border)" : "1px solid transparent",
+    }}>
+      <div style={{
+        width: 32, height: 24, borderRadius: "var(--r-sm)", flexShrink: 0,
+        background: active ? "#3a4a30" : "#2a302a",
+        border: "1px solid rgba(255,255,255,0.06)",
+      }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: active ? 500 : 400, color: active ? "var(--accent)" : "var(--fg-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{label}</div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--fg-muted)", marginTop: 1 }}>{time}</div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── SCREEN 1: MAIN APP VIEW ─── */
+function MainAppScreen() {
+  const [prompt, setPrompt] = useState("");
+  const [history, setHistory] = useState([
+    { label: "memory decaying",    time: "2m ago",  active: false },
+    { label: "lonely underwater",  time: "14m ago", active: false },
+    { label: "anxious static",     time: "32m ago", active: false },
+    { label: "sacred silhouettes", time: "1h ago",  active: true  },
+    { label: "mechanical dream",   time: "2h ago",  active: false },
+  ]);
+  const [configTab, setConfigTab] = useState("MOTION");
+  const [jsonTab, setJsonTab] = useState("JSON");
+  const configTabs = ["PALETTE","MOTION","EDGES","PARTICLES","DISTORTION","AUDIO MAPPING"];
+
+  return (
+    <div style={{
+      width: "100%", height: "100%", display: "flex", fontFamily: "var(--font-ui)",
+      background: "var(--bg-page)", overflow: "hidden",
+    }}>
+
+      {/* ── Sidebar ── */}
+      <div style={{
+        width: 180, background: "var(--bg-sidebar)", display: "flex", flexDirection: "column",
+        flexShrink: 0,
+      }}>
+        {/* Logo */}
+        <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <div style={{ width: 20, height: 20, borderRadius: "var(--r-sm)", background: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 10, color: "#fff" }}>✦</span>
+            </div>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg-on-dark-active)", letterSpacing: "0.04em" }}>VIBE RENDERER</span>
+          </div>
+        </div>
+        {/* Nav */}
+        <nav style={{ flex: 1, padding: "10px 8px", display: "flex", flexDirection: "column", gap: 1 }}>
+          {[
+            { label: "Live Render", active: true },
+            { label: "Timeline",    active: false },
+            { label: "Presets",     active: false },
+            { label: "Gallery",     active: false },
+            { label: "Audio",       active: false },
+            { label: "Saved Vibes", active: false },
+            { label: "Settings",    active: false },
+          ].map(item => (
+            <div key={item.label} style={{
+              padding: "7px 10px", borderRadius: "var(--r-md)", cursor: "pointer",
+              background: item.active ? "var(--bg-sidebar-active)" : "transparent",
+              color: item.active ? "var(--fg-on-dark-active)" : "var(--fg-on-dark-muted)",
+              fontSize: 12.5, fontWeight: item.active ? 500 : 400,
+              transition: "all 0.12s",
+              display: "flex", alignItems: "center", gap: 7,
+            }}>
+              <span style={{ fontSize: 11, opacity: 0.7 }}>
+                {item.label === "Live Render" ? "⊙" : item.label === "Timeline" ? "▤" : item.label === "Presets" ? "⊞" :
+                 item.label === "Gallery" ? "⊟" : item.label === "Audio" ? "♪" : item.label === "Saved Vibes" ? "♡" : "⚙"}
+              </span>
+              {item.label}
+            </div>
+          ))}
+        </nav>
+        {/* User */}
+        <div style={{ padding: "10px 12px", borderTop: "1px solid rgba(255,255,255,0.07)", display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 26, height: 26, borderRadius: "50%", background: "#4a5a3a", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <span style={{ fontSize: 11, color: "var(--fg-on-dark-active)" }}>A</span>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: "var(--fg-on-dark-active)", fontWeight: 500 }}>Aria Studio</div>
+            <div style={{ fontSize: 10, color: "var(--fg-on-dark-muted)" }}>Creator</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Center: Prompt + Canvas ── */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", borderRight: "1px solid var(--fg-ghost)", overflow: "hidden" }}>
+
+        {/* Prompt panel */}
+        <div style={{ padding: "16px 18px", borderBottom: "1px solid var(--fg-ghost)", background: "var(--bg-base)" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.14em", color: "var(--fg-muted)", marginBottom: 8 }}>NEW PROMPT</div>
+          <div style={promptWrapStyle}>
+            <textarea
+              value={prompt || "make the silhouettes feel sacred and slow"}
+              onChange={e => setPrompt(e.target.value)}
+              rows={2}
+              style={{ ...promptInputStyle, fontSize: 13 }}
+              placeholder="describe the vibe…"
+            />
+            <div style={{ padding: "7px 10px 9px", display: "flex", gap: 7 }}>
+              <button style={{ ...btnPrimary, flex: 1, justifyContent: "center", display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>✦ Generate</button>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button style={{ ...btnSecondary, fontSize: 11, padding: "4px 12px" }}>↺ Remix</button>
+            <button style={{ ...btnGhost, fontSize: 11, padding: "4px 12px" }}>✧ Surprise Me</button>
+          </div>
+        </div>
+
+        {/* History */}
+        <div style={{ flex: 1, overflow: "auto", padding: "12px 10px" }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9, letterSpacing: "0.14em", color: "var(--fg-muted)", marginBottom: 8, padding: "0 4px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span>RECENT VIBES</span>
+            <span style={{ color: "var(--accent)", cursor: "pointer" }}>+</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+            {history.map(item => <HistoryItem key={item.label} {...item} />)}
+          </div>
+          <button style={{ ...btnGhost, width: "100%", marginTop: 10, fontSize: 11, justifyContent: "center", display: "flex", alignItems: "center" }}>View All</button>
+        </div>
+      </div>
+
+      {/* ── Live Render Canvas ── */}
+      <div style={{ flex: 2, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* Header */}
+        <div style={{
+          height: 40, display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 16px", borderBottom: "1px solid var(--fg-ghost)", background: "var(--bg-base)", flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--fg-primary)" }}>LIVE RENDER</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 4, fontFamily: "var(--font-mono)", fontSize: 10, color: "#5a8a50" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#5a8a50", display: "inline-block" }} />
+              LIVE
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 16, fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-muted)" }}>
+            <span>FPS 60</span><span>RES 1280×720</span><span>CPU 22%</span><span>GPU 34%</span>
+          </div>
+        </div>
+
+        {/* Canvas */}
+        <div style={{ flex: 1, background: "#0d0c10", position: "relative", overflow: "hidden" }}>
+          <div style={{
+            position: "absolute", inset: 0,
+            background: "radial-gradient(ellipse at 55% 45%, #2a1a0a 0%, #0d0c10 60%)",
+          }} />
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.18 }}>
+            <defs>
+              <filter id="mainNoise">
+                <feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="4" />
+                <feColorMatrix type="saturate" values="0" />
+              </filter>
+            </defs>
+            <rect width="100%" height="100%" filter="url(#mainNoise)" />
+          </svg>
+          {/* Silhouette placeholder */}
+          <div style={{
+            position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
+            width: 90, height: 160, borderRadius: "40% 40% 30% 30%",
+            background: "linear-gradient(180deg, rgba(255,220,140,0.08) 0%, rgba(80,60,20,0.15) 100%)",
+            border: "1px solid rgba(220,180,80,0.15)",
+            boxShadow: "0 0 80px rgba(200,160,60,0.12), 0 0 160px rgba(200,160,60,0.06)",
+          }} />
+          {/* Light rays */}
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: 0.07 }}>
+            {[...Array(8)].map((_, i) => (
+              <line key={i}
+                x1="50%" y1="0%"
+                x2={`${20 + i * 10}%`} y2="100%"
+                stroke="#c8a050" strokeWidth="1"
+              />
+            ))}
+          </svg>
+          <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at center, transparent 35%, rgba(8,7,10,0.9) 100%)" }} />
+        </div>
+
+        {/* Playback bar */}
+        <div style={{
+          height: 44, display: "flex", alignItems: "center", gap: 12, padding: "0 16px",
+          borderTop: "1px solid var(--fg-ghost)", background: "var(--bg-base)", flexShrink: 0,
+        }}>
+          <button style={{ ...btnIcon, width: 28, height: 28 }}>⏸</button>
+          <button style={{ ...btnIcon, width: 28, height: 28 }}>📷</button>
+          <button style={{ width: 16, height: 16, borderRadius: "50%", background: "#a84030", border: "2px solid rgba(168,64,48,0.4)", cursor: "pointer" }} />
+          <div style={{ flex: 1 }} />
+          <button style={{ ...btnGhost, fontSize: 11, padding: "4px 12px", display: "flex", alignItems: "center", gap: 5 }}>📷 Snapshot</button>
+          <button style={{ ...btnGhost, fontSize: 11, padding: "4px 12px" }}>⚙</button>
+        </div>
+
+        {/* Inline prompt bar */}
+        <div style={{
+          padding: "10px 16px", borderTop: "1px solid var(--fg-ghost)", background: "var(--bg-base)",
+          display: "flex", alignItems: "center", gap: 10, flexShrink: 0,
+        }}>
+          <span style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--fg-muted)", letterSpacing: "0.12em", flexShrink: 0 }}>PROMPT</span>
+          <div style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--fg-secondary)", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ color: "var(--accent)", fontSize: 10 }}>✦</span>
+            make the silhouettes feel sacred and slow
+          </div>
+          <button style={{ ...btnPrimary, fontSize: 11, padding: "5px 14px", display: "flex", alignItems: "center", gap: 5 }}>✦ Generate</button>
+        </div>
+      </div>
+
+      {/* ── Config Inspector ── */}
+      <div style={{
+        width: 230, background: "var(--bg-base)", borderLeft: "1px solid var(--fg-ghost)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+        <div style={{
+          padding: "10px 14px", borderBottom: "1px solid var(--fg-ghost)",
+          display: "flex", justifyContent: "space-between", alignItems: "center",
+        }}>
+          <span style={{ fontSize: 11, fontWeight: 500, color: "var(--fg-primary)", letterSpacing: "0.04em" }}>CONFIG INSPECTOR</span>
+          <button style={{ ...btnGhost, fontSize: 10, padding: "3px 8px" }}>Reset All</button>
+        </div>
+
+        {/* Accordion sections */}
+        <div style={{ flex: 1, overflow: "auto" }}>
+          {["PALETTE","MOTION","EDGES","PARTICLES","DISTORTION","AUDIO MAPPING"].map(section => (
+            <AccordionSection key={section} title={section} open={section === "PALETTE" || section === "MOTION"}>
+              {section === "PALETTE" && (
+                <div style={{ padding: "4px 0 8px" }}>
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, color: "var(--fg-secondary)", marginBottom: 5 }}>Tint</div>
+                    <div style={{ display: "flex", gap: 3, height: 14 }}>
+                      {["#3d7a72","#c8b878","#9858a8","#7888c8"].map(c => (
+                        <div key={c} style={{ flex: 1, background: c, borderRadius: 2 }} />
+                      ))}
+                    </div>
+                  </div>
+                  <SliderRow label="Saturation" defaultVal={0.32} />
+                  <SliderRow label="Contrast"   defaultVal={0.48} />
+                </div>
+              )}
+              {section === "MOTION" && (
+                <div style={{ padding: "4px 0 8px", display: "flex", flexDirection: "column", gap: 10 }}>
+                  <SliderRow label="Speed"        defaultVal={0.28} />
+                  <SliderRow label="Trail Length" defaultVal={0.72} />
+                  <SliderRow label="Blur"         defaultVal={0.65} />
+                </div>
+              )}
+              {(section === "EDGES" || section === "PARTICLES" || section === "DISTORTION" || section === "AUDIO MAPPING") && null}
+            </AccordionSection>
+          ))}
+        </div>
+
+        {/* JSON/Signals toggle */}
+        <div style={{ borderTop: "1px solid var(--fg-ghost)", background: "var(--bg-overlay)" }}>
+          <div style={{ display: "flex", borderBottom: "1px solid var(--fg-ghost)" }}>
+            {["JSON","SIGNALS"].map(t => (
+              <button key={t} onClick={() => setJsonTab(t)} style={{
+                flex: 1, padding: "7px 0",
+                fontFamily: "var(--font-mono)", fontSize: 10, letterSpacing: "0.08em",
+                background: "transparent", border: "none", cursor: "pointer",
+                color: jsonTab === t ? "var(--fg-primary)" : "var(--fg-muted)",
+                borderBottom: jsonTab === t ? `2px solid var(--accent)` : "2px solid transparent",
+                fontWeight: jsonTab === t ? 500 : 400,
+              }}>{t}</button>
+            ))}
+          </div>
+          <div style={{ padding: 10, fontFamily: "var(--font-mono)", fontSize: 9.5, color: "var(--fg-secondary)", lineHeight: 1.7, maxHeight: 110, overflow: "auto" }}>
+            {jsonTab === "JSON"
+              ? `{\n  "palette": {\n    "tint": [120, 96, 55],\n    "saturation": 0.32,\n    "contrast": 0.48\n  },\n  "motion": { ... }\n}`
+              : ["edgeDensity: 0.62","motionAmount: 0.48","brightness: 0.71"].map(s => <div key={s}>{s}</div>)
+            }
+          </div>
+          <div style={{ padding: "4px 10px 8px", display: "flex", justifyContent: "flex-end" }}>
+            <button style={{ ...btnGhost, fontSize: 10, padding: "3px 10px" }}>Copy JSON</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── ACCORDION ─── */
+function AccordionSection({ title, open: defaultOpen, children }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderBottom: "1px solid var(--fg-ghost)" }}>
+      <button onClick={() => setOpen(!open)} style={{
+        width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "9px 14px", background: "transparent", border: "none", cursor: "pointer",
+        fontFamily: "var(--font-mono)", fontSize: 9.5, letterSpacing: "0.12em",
+        color: "var(--fg-secondary)", textAlign: "left",
+      }}>
+        {title}
+        <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>{open ? "∧" : "∨"}</span>
+      </button>
+      {open && children && (
+        <div style={{ padding: "0 14px", display: "flex", flexDirection: "column", gap: 9 }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── SCREEN 2: PRESET GALLERY ─── */
+function PresetGalleryScreen() {
+  const [selected, setSelected] = useState("Sacred Silhouette");
+  const [activeFilter, setActiveFilter] = useState("All");
+  const filters = ["All","Abstract","Nature","Urban","Emotional","Custom"];
+
+  const presets = [
+    { name: "Memory Decay",      hue: 55,  colors: ["#7a6840","#c8a870","#4a3820","#9a8060"] },
+    { name: "Anxious Static",    hue: 0,   colors: ["#606060","#909090","#404040","#b0b0b0"] },
+    { name: "Sacred Silhouette", hue: 280, colors: ["#5a3a7a","#9858b8","#3a2858","#7848a8"] },
+    { name: "Underwater Room",   hue: 210, colors: ["#2a4a6a","#4888a8","#1a3050","#387898"] },
+    { name: "Mechanical Dream",  hue: 200, colors: ["#3a4a4a","#607878","#283838","#508080"] },
+    { name: "Violent Digital",   hue: 10,  colors: ["#7a2020","#c83030","#501010","#a82828"] },
+    { name: "Ghost Signal",      hue: 265, colors: ["#3a3850","#6860a0","#282840","#5850a0"] },
+    { name: "Cloud Cathedral",   hue: 240, colors: ["#404868","#7888b8","#303858","#6878a8"] },
+    { name: "Quantum Drift",     hue: 290, colors: ["#482858","#8848a8","#381848","#784898"] },
+  ];
+
+  return (
+    <div style={{ width: "100%", height: "100%", background: "var(--bg-base)", display: "flex", flexDirection: "column", fontFamily: "var(--font-ui)", overflow: "hidden" }}>
+      <div style={{ padding: "14px 18px 12px", borderBottom: "1px solid var(--fg-ghost)" }}>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, letterSpacing: "0.14em", color: "var(--fg-muted)", marginBottom: 10 }}>PRESET GALLERY</div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{
+            flex: 1, display: "flex", alignItems: "center", gap: 8,
+            background: "var(--bg-overlay)", border: "1px solid var(--fg-ghost)",
+            borderRadius: "var(--r-md)", padding: "6px 10px",
+            boxShadow: "var(--shadow-sm)",
+          }}>
+            <span style={{ color: "var(--fg-muted)", fontSize: 12 }}>⌕</span>
+            <span style={{ fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--fg-muted)" }}>Search presets…</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+          {filters.map(f => (
+            <button key={f} onClick={() => setActiveFilter(f)} style={{
+              fontFamily: "var(--font-ui)", fontSize: 11.5,
+              padding: "3px 12px", borderRadius: "var(--r-full)",
+              border: `1px solid ${activeFilter === f ? "var(--accent-border)" : "var(--fg-ghost)"}`,
+              background: activeFilter === f ? "var(--accent-light)" : "transparent",
+              color: activeFilter === f ? "var(--accent)" : "var(--fg-secondary)",
+              cursor: "pointer", fontWeight: activeFilter === f ? 500 : 400,
+            }}>{f}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+          {presets.map(p => (
+            <div key={p.name}
+              onClick={() => setSelected(p.name)}
+              style={{
+                background: "var(--bg-overlay)", borderRadius: "var(--r-lg)",
+                border: `1px solid ${selected === p.name ? "var(--accent-border)" : "var(--fg-ghost)"}`,
+                overflow: "hidden", cursor: "pointer",
+                boxShadow: selected === p.name ? `0 0 0 2px var(--accent-light), var(--shadow-md)` : "var(--shadow-sm)",
+                transition: "all 0.15s",
+              }}
+            >
+              <div style={{
+                height: 72, position: "relative", overflow: "hidden",
+                background: `linear-gradient(135deg, ${p.colors[0]} 0%, ${p.colors[2]} 100%)`,
+              }}>
+                <div style={{
+                  position: "absolute", left: "50%", top: "50%", transform: "translate(-50%,-50%)",
+                  width: 22, height: 38, borderRadius: "40% 40% 30% 30%",
+                  background: `linear-gradient(180deg, ${p.colors[1]}40 0%, ${p.colors[1]}10 100%)`,
+                  border: `1px solid ${p.colors[1]}40`,
+                }} />
+                <div style={{ position: "absolute", bottom: 4, left: 6, display: "flex", gap: 2 }}>
+                  {p.colors.map((c, i) => <div key={i} style={{ width: 8, height: 8, borderRadius: 2, background: c, border: "1px solid rgba(255,255,255,0.15)" }} />)}
+                </div>
+              </div>
+              <div style={{ padding: "8px 10px 9px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11.5, fontWeight: 500, color: "var(--fg-primary)" }}>{p.name}</span>
+                <button style={{ ...btnPrimary, fontSize: 10, padding: "3px 9px" }}>Apply</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+          <button style={{ ...btnSecondary, fontSize: 12, padding: "7px 24px" }}>Load More</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── SCREEN 3: SIGNAL MONITOR ─── */
+function SignalMonitorScreen() {
+  const signals = [
+    { label: "Edge Density",   val: 0.62, color: "var(--signal-teal)" },
+    { label: "Motion Amount",  val: 0.48, color: "var(--signal-amber)" },
+    { label: "Brightness",     val: 0.71, color: "var(--fg-secondary)" },
+    { label: "Color Variance", val: 0.36, color: "var(--signal-blue)" },
+    { label: "Scene Stability",val: 0.23, color: "var(--signal-purple)" },
+  ];
+  return (
+    <div style={{ width: "100%", height: "100%", background: "var(--bg-base)", display: "flex", flexDirection: "column", fontFamily: "var(--font-ui)", overflow: "hidden" }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--fg-ghost)" }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, letterSpacing: "0.14em", color: "var(--fg-muted)" }}>SIGNAL MONITOR</span>
+      </div>
+      <div style={{ flex: 1, padding: "16px", display: "flex", flexDirection: "column", gap: 16 }}>
+        {signals.map(s => (
+          <div key={s.label}>
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+              <span style={{ fontSize: 12.5, color: "var(--fg-secondary)" }}>{s.label}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg-muted)" }}>{s.val.toFixed(2)}</span>
+            </div>
+            {/* Sparkline-ish bar */}
+            <div style={{ height: 28, background: "var(--bg-overlay)", borderRadius: "var(--r-sm)", border: "1px solid var(--fg-ghost)", overflow: "hidden", position: "relative" }}>
+              <svg width="100%" height="28" style={{ display: "block" }}>
+                <polyline
+                  points={generateSparkline(s.val, 200, 28)}
+                  fill="none"
+                  stroke={s.color}
+                  strokeWidth="1.5"
+                  opacity="0.8"
+                />
+                <polyline
+                  points={generateSparklineArea(s.val, 200, 28)}
+                  fill={s.color}
+                  opacity="0.08"
+                />
+              </svg>
+            </div>
+          </div>
+        ))}
+
+        {/* Audio mapping preview */}
+        <div style={{ marginTop: 8, borderTop: "1px solid var(--fg-ghost)", paddingTop: 14 }}>
+          <div style={{ fontFamily: "var(--font-mono)", fontSize: 9.5, letterSpacing: "0.12em", color: "var(--fg-muted)", marginBottom: 12 }}>AUDIO MAPPING PREVIEW</div>
+          <div style={{ display: "flex", gap: 12, justifyContent: "space-around" }}>
+            {[
+              { from: "Edge", to: "Hi-Hat", icon: "↯" },
+              { from: "Motion", to: "Distortion", icon: "≈" },
+              { from: "Brightness", to: "Pitch", icon: "◎" },
+              { from: "Stability", to: "Reverb", icon: "○" },
+              { from: "Contours", to: "Bass", icon: "⌇" },
+            ].map(m => (
+              <div key={m.from} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <div style={{
+                  width: 32, height: 32, borderRadius: "var(--r-md)",
+                  background: "var(--bg-overlay)", border: "1px solid var(--fg-ghost)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 14, color: "var(--fg-secondary)",
+                  boxShadow: "var(--shadow-sm)",
+                }}>{m.icon}</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 8.5, color: "var(--fg-muted)", textAlign: "center", lineHeight: 1.4 }}>
+                  <div>{m.from}</div>
+                  <div style={{ color: "var(--accent)", fontSize: 8 }}>→</div>
+                  <div>{m.to}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12, padding: "8px 10px", background: "var(--bg-overlay)", borderRadius: "var(--r-md)", border: "1px solid var(--fg-ghost)", display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <span style={{ fontSize: 14, color: "var(--accent)", flexShrink: 0, marginTop: 1 }}>💡</span>
+            <span style={{ fontSize: 11, color: "var(--fg-secondary)", lineHeight: 1.5 }}>The audio reacts to live visual signals in real time. Adjust mappings on the Audio page.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── SPARKLINE HELPER ─── */
+function generateSparkline(baseVal, width, height) {
+  const pts = [];
+  for (let i = 0; i <= 40; i++) {
+    const x = (i / 40) * width;
+    const noise = (Math.sin(i * 0.8) * 0.12 + Math.sin(i * 1.7) * 0.07 + Math.sin(i * 0.3) * 0.05);
+    const y = height - (baseVal + noise) * (height - 4) - 2;
+    pts.push(`${x},${Math.max(2, Math.min(height - 2, y))}`);
+  }
+  return pts.join(" ");
+}
+function generateSparklineArea(baseVal, width, height) {
+  const line = generateSparkline(baseVal, width, height);
+  return `0,${height} ${line} ${width},${height}`;
+}
+
+/* ─── STYLE CONSTANTS ─── */
+const btnPrimary = {
+  background: "var(--accent)", color: "#fff",
+  border: "1px solid transparent",
+  fontFamily: "var(--font-ui)", fontSize: 13, fontWeight: 500,
+  padding: "8px 16px", borderRadius: "var(--r-md)", cursor: "pointer",
+  boxShadow: "0 1px 3px rgba(40,60,30,0.25)",
+  transition: "background 0.12s",
+};
+const btnSecondary = {
+  background: "var(--bg-overlay)", color: "var(--fg-primary)",
+  border: "1px solid var(--fg-ghost)",
+  fontFamily: "var(--font-ui)", fontSize: 13, fontWeight: 400,
+  padding: "8px 16px", borderRadius: "var(--r-md)", cursor: "pointer",
+  boxShadow: "var(--shadow-sm)",
+};
+const btnGhost = {
+  background: "transparent", color: "var(--fg-secondary)",
+  border: "1px solid var(--fg-ghost)",
+  fontFamily: "var(--font-ui)", fontSize: 13,
+  padding: "8px 16px", borderRadius: "var(--r-md)", cursor: "pointer",
+};
+const btnDanger = {
+  background: "transparent", color: "var(--signal-red)",
+  border: `1px solid var(--signal-red)`,
+  fontFamily: "var(--font-ui)", fontSize: 13,
+  padding: "8px 16px", borderRadius: "var(--r-md)", cursor: "pointer",
+};
+const btnIcon = {
+  background: "var(--bg-overlay)", color: "var(--fg-secondary)",
+  border: "1px solid var(--fg-ghost)",
+  fontFamily: "var(--font-mono)", fontSize: 13,
+  borderRadius: "var(--r-md)", cursor: "pointer",
+  display: "flex", alignItems: "center", justifyContent: "center",
+  boxShadow: "var(--shadow-sm)",
+};
+const tabStyle = {
+  background: "transparent", border: "none", borderBottom: "2px solid transparent",
+  fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-muted)",
+  padding: "8px 8px", cursor: "pointer", letterSpacing: "0.04em",
+};
+const promptWrapStyle = {
+  background: "var(--bg-overlay)", border: "1px solid var(--fg-ghost)",
+  borderRadius: "var(--r-lg)", boxShadow: "var(--shadow-sm)", overflow: "hidden",
+};
+const promptInputStyle = {
+  width: "100%", background: "transparent", border: "none", outline: "none",
+  color: "var(--fg-primary)", fontFamily: "var(--font-ui)", fontSize: 14,
+  lineHeight: 1.5, padding: "12px 14px", resize: "none",
+};
+
+/* ─── GLOBAL CSS ─── */
+const globalCSS = `
+  @keyframes lcPulse { 0%,100% { opacity:1; } 50% { opacity:0.2; } }
+
+  .lc-slider {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 2px;
+    background: var(--fg-ghost);
+    border-radius: 1px;
+    outline: none;
+    cursor: pointer;
+  }
+  .lc-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 11px; height: 11px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+    border: 2px solid #fff;
+    box-shadow: 0 1px 3px rgba(40,60,30,0.3);
+  }
+  .lc-slider::-webkit-slider-runnable-track {
+    height: 2px;
+    background: var(--fg-ghost);
+    border-radius: 1px;
+  }
+
+  textarea:focus { outline: none; }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--fg-ghost); border-radius: 2px; }
+`;
+
+/* ─── ROOT APP ─── */
+function App() {
+  return (
+    <>
+      <style>{globalCSS}</style>
+      <DesignCanvas title="Latent Canvas — Design System">
+
+        <DCSection id="tokens" title="Tokens">
+          <DCArtboard id="palette" label="Color Palette" width={620} height={560}>
+            <PaletteArtboard />
+          </DCArtboard>
+          <DCArtboard id="type" label="Typography" width={700} height={600}>
+            <TypeArtboard />
+          </DCArtboard>
+          <DCArtboard id="spacing" label="Spacing · Radius · Shadow" width={380} height={480}>
+            <SpacingArtboard />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="components" title="Components">
+          <DCArtboard id="comp" label="UI Components" width={540} height={820}>
+            <ComponentsArtboard />
+          </DCArtboard>
+        </DCSection>
+
+        <DCSection id="screens" title="Example Screens">
+          <DCArtboard id="main-app" label="Main App — Live Render" width={1100} height={660}>
+            <MainAppScreen />
+          </DCArtboard>
+          <DCArtboard id="presets" label="Preset Gallery" width={600} height={660}>
+            <PresetGalleryScreen />
+          </DCArtboard>
+          <DCArtboard id="signals" label="Signal Monitor" width={380} height={540}>
+            <SignalMonitorScreen />
+          </DCArtboard>
+        </DCSection>
+
+      </DesignCanvas>
+    </>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+<div id="root" style="width:100vw;height:100vh;overflow:hidden;"></div>
+</body>
+</html>
