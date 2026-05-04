@@ -24,8 +24,14 @@ export function drawEdges(
   sc.putImageData(edges, 0, 0);
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = Math.min(1, glow);
+  // First pass: crisp contours.
+  ctx.globalAlpha = Math.min(1, 0.3 + glow * 0.85);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(s, 0, 0, destW, destH);
+  // Second pass: soft bloom so the contours read as an effect instead of aliasing.
+  ctx.globalAlpha = Math.min(0.9, glow * 0.75);
   ctx.imageSmoothingEnabled = true;
+  ctx.filter = `blur(${(1 + glow * 8).toFixed(2)}px)`;
   ctx.drawImage(s, 0, 0, destW, destH);
   ctx.restore();
 }

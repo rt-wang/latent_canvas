@@ -9,10 +9,10 @@ let noiseSize = 0;
 export function applyPixelation(ctx: CanvasRenderingContext2D, w: number, h: number, amount: number) {
   if (amount < 0.02) return;
   if (!pixScratch) pixScratch = document.createElement('canvas');
-  // amount 0 → no change; 1 → ~32px blocks
-  const blocks = Math.max(1, Math.round((1 - amount) * Math.min(w, h) / 4 + amount * 0.5));
-  const sw = Math.max(2, Math.floor(w / blocks));
-  const sh = Math.max(2, Math.floor(h / blocks));
+  // amount 0 → no change; 1 → coarse but still readable block size.
+  const cell = Math.max(1, Math.round(1 + amount * Math.min(w, h) / 12));
+  const sw = Math.max(2, Math.floor(w / cell));
+  const sh = Math.max(2, Math.floor(h / cell));
   pixScratch.width = sw;
   pixScratch.height = sh;
   const sc = pixScratch.getContext('2d');
