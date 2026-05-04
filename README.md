@@ -20,7 +20,7 @@ This boots two processes via `concurrently`:
 - **web** — Vite dev server at http://localhost:5173
 - **api** — Express server at http://localhost:3001 (proxied via Vite at `/api/*`)
 
-Open http://localhost:5173, allow camera access, type a vibe (e.g. *"make it feel like a memory decaying"*) and hit Enter.
+Open http://localhost:5173, choose a local video file, type a vibe (e.g. *"make it feel like a memory decaying"*) and hit Enter.
 
 ## Layout
 
@@ -32,12 +32,11 @@ src/
     PromptBox.tsx        Prompt input + suggestions
     HistoryPanel.tsx     Recent vibes list
     CanvasRenderer.tsx   RAF loop, FPS/signal HUD, the visible canvas
-    VideoInput.tsx       getUserMedia + hidden <video>
+    VideoInput.tsx       Local video upload + hidden <video>
     ConfigInspector.tsx  Accordion controls + JSON / Signals tabs
     HistoryItem.tsx, ui/Button.tsx, ui/Label.tsx
   cv/
-    opencvLoader.ts      Async load OpenCV.js once
-    frameAnalyzer.ts     Canny edges + frame-diff motion + brightness, all at 320×180
+    frameAnalyzer.ts     Canvas-based edges + frame-diff motion + brightness at 320×180
   render/
     renderer.ts          Per-frame pipeline (trails → video → palette → edges → noise → pixelation)
     effects/{palette,trails,edges,distortion}.ts
@@ -66,7 +65,6 @@ Other parts of the `VibeConfig` (particles, composition, audio mappings, etc.) a
 
 ## Notes
 
-- OpenCV.js is ~10 MB — loads once, async, with a "Loading CV…" overlay.
-- HTTPS or `localhost` is required for `getUserMedia` (Safari is strict about this).
+- Local files are loaded with a file picker, so camera permissions are no longer required.
 - Frame analysis runs at 320×180 to keep the loop at 30+ FPS on modern laptops.
 - Config interpolation: palette/edges lerp at 0.05/frame, motion at 0.02, distortion at 0.08.

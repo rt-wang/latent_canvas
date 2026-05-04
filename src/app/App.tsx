@@ -9,6 +9,7 @@ import { ConfigInspector } from '../components/ConfigInspector';
 export function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [videoReady, setVideoReady] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', overflow: 'hidden' }}>
@@ -28,11 +29,15 @@ export function App() {
         <HistoryPanel />
       </div>
 
-      <CanvasRenderer videoRef={videoRef} videoReady={videoReady} />
+      <CanvasRenderer videoRef={videoRef} videoReady={videoReady} videoError={videoError} />
 
       <ConfigInspector />
 
-      <VideoInput videoRef={videoRef} onReadyChange={setVideoReady} />
+      <VideoInput
+        videoRef={videoRef}
+        onReadyChange={setVideoReady}
+        onErrorChange={setVideoError}
+      />
     </div>
   );
 }

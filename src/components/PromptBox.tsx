@@ -37,7 +37,6 @@ export function PromptBox() {
   const error = useConfigStore((s) => s.error);
   const setTarget = useConfigStore((s) => s.setTarget);
   const setStatus = useConfigStore((s) => s.setStatus);
-  const current = useConfigStore((s) => s.current);
   const loading = status === 'loading';
 
   const submit = useCallback(async () => {
@@ -45,13 +44,14 @@ export function PromptBox() {
     if (!prompt || loading) return;
     setStatus('loading');
     try {
+      const current = useConfigStore.getState().current;
       const cfg = await requestConfig(prompt, current);
       setTarget(cfg, prompt);
       setValue('');
     } catch (e) {
       setStatus('error', (e as Error).message);
     }
-  }, [value, loading, current, setStatus, setTarget]);
+  }, [value, loading, setStatus, setTarget]);
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) {

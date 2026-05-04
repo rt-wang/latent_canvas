@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { whenReady } from '../cv/opencvLoader';
 import { FrameAnalyzer } from '../cv/frameAnalyzer';
 import { renderFrame } from '../render/renderer';
 import { lerpConfig } from '../utils/lerp';
@@ -8,24 +7,19 @@ import { SectionLabel } from './ui/Label';
 
 const ANALYSIS_W = 320;
 const ANALYSIS_H = 180;
+const UI_SYNC_MS = 250;
 
-type Props = { videoRef: React.RefObject<HTMLVideoElement>; videoReady: boolean };
+type Props = {
+  videoRef: React.RefObject<HTMLVideoElement>;
+  videoReady: boolean;
+  videoError: string | null;
+};
 
-export function CanvasRenderer({ videoRef, videoReady }: Props) {
+export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
   const displayRef = useRef<HTMLCanvasElement>(null);
   const analysisRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
-  const [cvReady, setCvReady] = useState(false);
-  const [cvError, setCvError] = useState<string | null>(null);
-
-  // Load OpenCV once
-  useEffect(() => {
-    let cancelled = false;
-    whenReady()
-      .then(() => { if (!cancelled) setCvReady(true); })
-      .catch((e) => { if (!cancelled) setCvError(String(e)); });
-    return () => { cancelled = true; };
-  }, []);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
   // Resize display canvas to match container, maintaining 16:9 aspect.
   useEffect(() => {
@@ -49,7 +43,7 @@ export function CanvasRenderer({ videoRef, videoReady }: Props) {
 
   // Main render loop
   useEffect(() => {
-    if (!cvReady || !videoReady) return;
+    if (!videoReady) return;
     const video = videoRef.current;
     const display = displayRef.current;
     const analysis = analysisRef.current;
@@ -57,61 +51,74 @@ export function CanvasRenderer({ videoRef, videoReady }: Props) {
 
     analysis.width = ANALYSIS_W;
     analysis.height = ANALYSIS_H;
+    const actx = analysis.getContext('2d', { willReadFrequently: true });
+    if (!actx) {
+      setRenderError('Could not create analysis canvas context.');
+      return;
+    }
 
-    let analyzer: FrameAnalyzer | null = null;
-    let cancelled = false;
-    whenReady().then((cv) => {
-      if (cancelled) return;
-      analyzer = new FrameAnalyzer(cv, ANALYSIS_W, ANALYSIS_H);
-    });
+    setRenderError(null);
+    const analyzer = new FrameAnalyzer(ANALYSIS_W, ANALYSIS_H);
 
     const store = useConfigStore.getState;
+    let current = store().current;
+    let latestSignals = store().signals;
+    let latestFps = store().fps;
     let raf = 0;
     let frameCount = 0;
     let lastFps = performance.now();
+    let lastUiSync = lastFps;
 
-    const tick = () => {
+    const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
-      const s = store();
-      const next = lerpConfig(s.current, s.target);
-      useConfigStore.setState({ current: next });
+      current = lerpConfig(current, store().target);
 
       let edgeImage: ImageData | null = null;
-      if (analyzer && video.readyState >= 2) {
-        const actx = analysis.getContext('2d', { willReadFrequently: true });
-        if (actx) {
-          actx.save();
-          actx.setTransform(-1, 0, 0, 1, ANALYSIS_W, 0);
-          actx.drawImage(video, 0, 0, ANALYSIS_W, ANALYSIS_H);
-          actx.restore();
-          const rgba = actx.getImageData(0, 0, ANALYSIS_W, ANALYSIS_H);
-          const { signals, edges } = analyzer.analyze(rgba, next.edges.threshold);
-          edgeImage = edges;
-          useConfigStore.setState({ signals });
-        }
+      if (video.readyState >= 2) {
+        actx.save();
+        actx.setTransform(-1, 0, 0, 1, ANALYSIS_W, 0);
+        actx.drawImage(video, 0, 0, ANALYSIS_W, ANALYSIS_H);
+        actx.restore();
+        const rgba = actx.getImageData(0, 0, ANALYSIS_W, ANALYSIS_H);
+        const { signals, edges } = analyzer.analyze(rgba, current.edges.threshold);
+        edgeImage = edges;
+        latestSignals = signals;
       }
 
-      renderFrame({ video, display, analysis, config: next, edges: edgeImage });
+      renderFrame({ video, display, config: current, edges: edgeImage });
 
       frameCount++;
-      const now = performance.now();
       if (now - lastFps >= 500) {
-        const fps = (frameCount * 1000) / (now - lastFps);
-        useConfigStore.setState({ fps });
+        latestFps = (frameCount * 1000) / (now - lastFps);
         frameCount = 0;
         lastFps = now;
+      }
+
+      if (now - lastUiSync >= UI_SYNC_MS) {
+        lastUiSync = now;
+        useConfigStore.setState({
+          current,
+          signals: latestSignals,
+          fps: latestFps,
+        });
       }
     };
     raf = requestAnimationFrame(tick);
     return () => {
-      cancelled = true;
       cancelAnimationFrame(raf);
-      analyzer?.destroy();
+      analyzer.destroy();
     };
-  }, [cvReady, videoReady, videoRef]);
+  }, [videoReady, videoRef]);
 
   const fps = useConfigStore((s) => s.fps);
   const signals = useConfigStore((s) => s.signals);
+  const statusLabel = videoReady && !renderError
+    ? 'LIVE'
+    : videoError
+      ? 'VIDEO ERROR'
+      : !videoReady
+        ? 'WAITING FOR VIDEO'
+        : 'RENDER ERROR';
 
   return (
     <div style={{ flex: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -129,7 +136,7 @@ export function CanvasRenderer({ videoRef, videoReady }: Props) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg-primary)' }}>LIVE RENDER</span>
-          {videoReady && cvReady ? (
+          {videoReady && !renderError ? (
             <span
               style={{
                 display: 'flex',
@@ -154,8 +161,15 @@ export function CanvasRenderer({ videoRef, videoReady }: Props) {
                 color: 'var(--fg-muted)',
               }}
             >
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--fg-muted)' }} />
-              {cvError ? 'CV ERROR' : !cvReady ? 'LOADING CV…' : 'WAITING FOR VIDEO'}
+              <span
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  background: videoError || renderError ? 'var(--signal-red)' : 'var(--fg-muted)',
+                }}
+              />
+              {statusLabel}
             </span>
           )}
         </div>
@@ -190,22 +204,22 @@ export function CanvasRenderer({ videoRef, videoReady }: Props) {
         />
         <canvas ref={analysisRef} style={{ display: 'none' }} />
 
-        {!cvReady && !cvError && (
+        {videoError && (
           <Overlay>
-            <SectionLabel light style={{ marginBottom: 8 }}>Loading</SectionLabel>
-            <div style={{ color: '#fff', fontSize: 14 }}>Loading OpenCV.js…</div>
+            <SectionLabel light style={{ marginBottom: 8 }}>Video</SectionLabel>
+            <div style={{ color: '#fff', fontSize: 13, maxWidth: 420 }}>{videoError}</div>
           </Overlay>
         )}
-        {cvError && (
+        {!videoError && !videoReady && (
+          <Overlay>
+            <SectionLabel light style={{ marginBottom: 8 }}>Video</SectionLabel>
+            <div style={{ color: '#fff', fontSize: 14 }}>Choose a video file to begin.</div>
+          </Overlay>
+        )}
+        {!videoError && videoReady && renderError && (
           <Overlay>
             <SectionLabel light style={{ marginBottom: 8 }}>Error</SectionLabel>
-            <div style={{ color: '#fff', fontSize: 13, maxWidth: 360 }}>{cvError}</div>
-          </Overlay>
-        )}
-        {cvReady && !videoReady && (
-          <Overlay>
-            <SectionLabel light style={{ marginBottom: 8 }}>Camera</SectionLabel>
-            <div style={{ color: '#fff', fontSize: 14 }}>Waiting for camera permission…</div>
+            <div style={{ color: '#fff', fontSize: 13, maxWidth: 360 }}>{renderError}</div>
           </Overlay>
         )}
       </div>

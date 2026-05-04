@@ -1,86 +1,86 @@
 import type { VisualSignals } from '../state/useConfigStore';
 
-// Analysis works at a tiny resolution (per design.md §16). The instance owns
-// reusable Mats so we don't allocate per frame.
+// Lightweight canvas-based analysis. This avoids OpenCV/WASM entirely while
+// still giving us stable edge, motion, and brightness signals at 320×180.
 export class FrameAnalyzer {
-  private cv: any;
   private w: number;
   private h: number;
-  private src: any;
-  private gray: any;
-  private prevGray: any;
-  private diff: any;
-  private edges: any;
-  private hasPrev = false;
+  private currGray: Uint8ClampedArray;
+  private prevGray: Uint8ClampedArray;
   private edgeImageData: ImageData;
+  private hasPrev = false;
 
-  constructor(cv: any, width = 320, height = 180) {
-    this.cv = cv;
+  constructor(width = 320, height = 180) {
     this.w = width;
     this.h = height;
-    this.src = new cv.Mat(height, width, cv.CV_8UC4);
-    this.gray = new cv.Mat(height, width, cv.CV_8UC1);
-    this.prevGray = new cv.Mat(height, width, cv.CV_8UC1);
-    this.diff = new cv.Mat(height, width, cv.CV_8UC1);
-    this.edges = new cv.Mat(height, width, cv.CV_8UC1);
+    this.currGray = new Uint8ClampedArray(width * height);
+    this.prevGray = new Uint8ClampedArray(width * height);
     this.edgeImageData = new ImageData(width, height);
+
+    const edgeData = this.edgeImageData.data;
+    for (let i = 0; i < width * height; i++) {
+      const j = i << 2;
+      edgeData[j] = 255;
+      edgeData[j + 1] = 255;
+      edgeData[j + 2] = 255;
+      edgeData[j + 3] = 0;
+    }
   }
 
   get width() { return this.w; }
   get height() { return this.h; }
 
-  // Run on a 320×180 RGBA ImageData. Returns normalized signals plus an
-  // edge ImageData (white edges on transparent) so the renderer can draw it.
   analyze(rgba: ImageData, edgeThreshold01: number): { signals: VisualSignals; edges: ImageData } {
-    const cv = this.cv;
-    this.src.data.set(rgba.data);
-    cv.cvtColor(this.src, this.gray, cv.COLOR_RGBA2GRAY);
-
-    // Brightness — mean of grayscale
-    const meanScalar = cv.mean(this.gray);
-    const averageBrightness = meanScalar[0] / 255;
-
-    // Motion — mean abs-diff vs previous gray
-    let motionAmount = 0;
-    if (this.hasPrev) {
-      cv.absdiff(this.gray, this.prevGray, this.diff);
-      motionAmount = cv.mean(this.diff)[0] / 255;
-    }
-    this.gray.copyTo(this.prevGray);
-    this.hasPrev = true;
-
-    // Edges — Canny. Map [0,1] threshold to [10..200] low, double for high.
-    const lo = 10 + edgeThreshold01 * 190;
-    const hi = Math.min(255, lo * 2.2);
-    cv.Canny(this.gray, this.edges, lo, hi, 3, false);
-
-    const edgeData = this.edgeImageData.data;
+    const src = rgba.data;
     const total = this.w * this.h;
-    let nonZero = 0;
-    const e = this.edges.data;
+    const edgeData = this.edgeImageData.data;
+
+    let brightnessSum = 0;
+    let motionSum = 0;
+
     for (let i = 0; i < total; i++) {
-      const v = e[i];
       const j = i << 2;
-      edgeData[j]     = 255;
-      edgeData[j + 1] = 255;
-      edgeData[j + 2] = 255;
-      edgeData[j + 3] = v; // alpha = edge intensity
-      if (v > 0) nonZero++;
+      // Integer luma approximation: 0.299r + 0.587g + 0.114b
+      const gray = (src[j] * 77 + src[j + 1] * 150 + src[j + 2] * 29) >> 8;
+      this.currGray[i] = gray;
+      brightnessSum += gray;
+      if (this.hasPrev) {
+        motionSum += Math.abs(gray - this.prevGray[i]);
+      }
+      edgeData[j + 3] = 0;
+    }
+
+    const edgeThreshold = 20 + edgeThreshold01 * 120;
+    let edgeCount = 0;
+
+    for (let y = 1; y < this.h - 1; y++) {
+      const row = y * this.w;
+      for (let x = 1; x < this.w - 1; x++) {
+        const i = row + x;
+        const horizontal = Math.abs(this.currGray[i + 1] - this.currGray[i - 1]);
+        const vertical = Math.abs(this.currGray[i + this.w] - this.currGray[i - this.w]);
+        const magnitude = horizontal + vertical;
+        const alpha = magnitude > edgeThreshold ? Math.min(255, magnitude * 2) : 0;
+        edgeData[(i << 2) + 3] = alpha;
+        if (alpha > 0) edgeCount++;
+      }
     }
 
     const signals: VisualSignals = {
-      edgeDensity: nonZero / total,
-      motionAmount,
-      averageBrightness,
+      edgeDensity: edgeCount / total,
+      motionAmount: this.hasPrev ? motionSum / (total * 255) : 0,
+      averageBrightness: brightnessSum / (total * 255),
     };
+
+    const swap = this.prevGray;
+    this.prevGray = this.currGray;
+    this.currGray = swap;
+    this.hasPrev = true;
+
     return { signals, edges: this.edgeImageData };
   }
 
   destroy() {
-    this.src.delete();
-    this.gray.delete();
-    this.prevGray.delete();
-    this.diff.delete();
-    this.edges.delete();
+    // No external resources to release in the canvas implementation.
   }
 }
