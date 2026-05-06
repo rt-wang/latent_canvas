@@ -3,7 +3,36 @@ import { z } from 'zod';
 const unit = z.number().min(0).max(1);
 const byte = z.number().int().min(0).max(255);
 
-export const VibeConfigSchema = z.object({
+export const AnalysisConfigSchema = z.object({
+  mode: z.enum(['manual', 'auto-suggest']),
+  edges: z.object({
+    enabled: z.boolean(),
+    threshold: unit,
+    blur: unit,
+  }),
+  lines: z.object({
+    enabled: z.boolean(),
+    detector: z.enum(['fast']),
+    threshold: unit,
+    minLength: unit,
+  }),
+  contours: z.object({
+    enabled: z.boolean(),
+    minArea: unit,
+    simplify: unit,
+  }),
+  motion: z.object({
+    enabled: z.boolean(),
+    persistence: unit,
+  }),
+  depth: z.object({
+    enabled: z.boolean(),
+    mode: z.enum(['pseudo', 'ml']),
+    strength: unit,
+  }),
+});
+
+export const StyleConfigSchema = z.object({
   palette: z.object({
     tint: z.tuple([byte, byte, byte]),
     saturation: unit,
@@ -14,22 +43,61 @@ export const VibeConfigSchema = z.object({
     trailLength: unit,
     blur: unit,
   }),
-  edges: z.object({
-    enabled: z.boolean(),
-    threshold: unit,
-    glow: unit,
+  vibe: z.object({
+    chaoticness: unit,
+    softness: unit,
+    density: unit,
+  }),
+  layers: z.object({
+    sourceOpacity: unit,
+    edgeGlow: unit,
+    lineWeight: unit,
+    lineGlow: unit,
+    contourStroke: unit,
+    contourFill: unit,
+    depthFog: unit,
   }),
   distortion: z.object({
     noise: unit,
     pixelation: unit,
+    wave: unit,
+    displacement: unit,
   }),
+  composition: z.object({
+    blendMode: z.enum(['normal', 'screen', 'multiply', 'difference', 'overlay']),
+    opacity: unit,
+    symmetry: unit,
+    vignette: unit,
+  }),
+  audioMapping: z
+    .object({
+      edgeDensity: z.string().optional(),
+      motionAmount: z.string().optional(),
+      brightness: z.string().optional(),
+      contourCount: z.string().optional(),
+      lineCount: z.string().optional(),
+    })
+    .optional(),
 });
 
-export type VibeConfig = z.infer<typeof VibeConfigSchema>;
+export const SessionConfigSchema = z.object({
+  analysis: AnalysisConfigSchema,
+  style: StyleConfigSchema,
+  renderMode: z.enum(['geometry-preview', 'styled']),
+});
 
-export const VibeConfigJsonSchema = {
+export type AnalysisConfig = z.infer<typeof AnalysisConfigSchema>;
+export type StyleConfig = z.infer<typeof StyleConfigSchema>;
+export type SessionConfig = z.infer<typeof SessionConfigSchema>;
+export type RenderMode = SessionConfig['renderMode'];
+
+// Compatibility aliases while the app migrates from the old phase-1 naming.
+export const VibeConfigSchema = StyleConfigSchema;
+export type VibeConfig = StyleConfig;
+
+export const StyleConfigJsonSchema = {
   type: 'object',
-  required: ['palette', 'motion', 'edges', 'distortion'],
+  required: ['palette', 'motion', 'vibe', 'layers', 'distortion', 'composition'],
   properties: {
     palette: {
       type: 'object',
@@ -40,10 +108,10 @@ export const VibeConfigJsonSchema = {
           items: { type: 'integer', minimum: 0, maximum: 255 },
           minItems: 3,
           maxItems: 3,
-          description: 'RGB tint applied as multiply over the frame.',
+          description: 'RGB tint applied to the source and geometry layers.',
         },
         saturation: { type: 'number', minimum: 0, maximum: 1 },
-        contrast:   { type: 'number', minimum: 0, maximum: 1 },
+        contrast: { type: 'number', minimum: 0, maximum: 1 },
         brightness: { type: 'number', minimum: 0, maximum: 1 },
       },
     },
@@ -51,26 +119,74 @@ export const VibeConfigJsonSchema = {
       type: 'object',
       required: ['trailLength', 'blur'],
       properties: {
-        trailLength: { type: 'number', minimum: 0, maximum: 1, description: 'Higher = longer ghost trails.' },
-        blur:        { type: 'number', minimum: 0, maximum: 1 },
+        trailLength: { type: 'number', minimum: 0, maximum: 1 },
+        blur: { type: 'number', minimum: 0, maximum: 1 },
       },
     },
-    edges: {
+    vibe: {
       type: 'object',
-      required: ['enabled', 'threshold', 'glow'],
+      required: ['chaoticness', 'softness', 'density'],
       properties: {
-        enabled:   { type: 'boolean' },
-        threshold: { type: 'number', minimum: 0, maximum: 1, description: 'Lower = more edges detected.' },
-        glow:      { type: 'number', minimum: 0, maximum: 1 },
+        chaoticness: { type: 'number', minimum: 0, maximum: 1 },
+        softness: { type: 'number', minimum: 0, maximum: 1 },
+        density: { type: 'number', minimum: 0, maximum: 1 },
+      },
+    },
+    layers: {
+      type: 'object',
+      required: [
+        'sourceOpacity',
+        'edgeGlow',
+        'lineWeight',
+        'lineGlow',
+        'contourStroke',
+        'contourFill',
+        'depthFog',
+      ],
+      properties: {
+        sourceOpacity: { type: 'number', minimum: 0, maximum: 1 },
+        edgeGlow: { type: 'number', minimum: 0, maximum: 1 },
+        lineWeight: { type: 'number', minimum: 0, maximum: 1 },
+        lineGlow: { type: 'number', minimum: 0, maximum: 1 },
+        contourStroke: { type: 'number', minimum: 0, maximum: 1 },
+        contourFill: { type: 'number', minimum: 0, maximum: 1 },
+        depthFog: { type: 'number', minimum: 0, maximum: 1 },
       },
     },
     distortion: {
       type: 'object',
-      required: ['noise', 'pixelation'],
+      required: ['noise', 'pixelation', 'wave', 'displacement'],
       properties: {
-        noise:      { type: 'number', minimum: 0, maximum: 1 },
+        noise: { type: 'number', minimum: 0, maximum: 1 },
         pixelation: { type: 'number', minimum: 0, maximum: 1 },
+        wave: { type: 'number', minimum: 0, maximum: 1 },
+        displacement: { type: 'number', minimum: 0, maximum: 1 },
+      },
+    },
+    composition: {
+      type: 'object',
+      required: ['blendMode', 'opacity', 'symmetry', 'vignette'],
+      properties: {
+        blendMode: {
+          type: 'string',
+          enum: ['normal', 'screen', 'multiply', 'difference', 'overlay'],
+        },
+        opacity: { type: 'number', minimum: 0, maximum: 1 },
+        symmetry: { type: 'number', minimum: 0, maximum: 1 },
+        vignette: { type: 'number', minimum: 0, maximum: 1 },
+      },
+    },
+    audioMapping: {
+      type: 'object',
+      properties: {
+        edgeDensity: { type: 'string' },
+        motionAmount: { type: 'string' },
+        brightness: { type: 'string' },
+        contourCount: { type: 'string' },
+        lineCount: { type: 'string' },
       },
     },
   },
 } as const;
+
+export const VibeConfigJsonSchema = StyleConfigJsonSchema;
