@@ -78,6 +78,10 @@ export class FrameAnalyzer {
       edgeDensity: cv.countNonZero(this.edges) / total,
       motionAmount: motion,
       averageBrightness: brightness,
+      lineCount: 0,
+      contourCount: 0,
+      depthMean: 0,
+      sceneStability: Math.max(0, 1 - motion * 3.5),
     };
 
     this.gray.copyTo(this.prevGray);

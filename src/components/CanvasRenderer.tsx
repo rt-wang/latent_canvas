@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { renderFrame } from '../render/renderer';
-import { lerpConfig } from '../utils/lerp';
+import { lerpStyleConfig } from '../utils/lerp';
 import { useConfigStore } from '../state/useConfigStore';
+import { defaultPreviewStyleConfig } from '../state/defaultConfig';
 import { SectionLabel } from './ui/Label';
+import type { GeometryFrame, WorkerGeometryPayload } from '../cv/geometry';
 
 const ANALYSIS_W = 320;
 const ANALYSIS_H = 180;
@@ -15,6 +17,52 @@ type Props = {
   videoReady: boolean;
   videoError: string | null;
 };
+
+function alphaToImage(buffer: ArrayBuffer | undefined, width: number, height: number, rgb: [number, number, number]) {
+  if (!buffer) return null;
+  const alpha = new Uint8ClampedArray(buffer);
+  const image = new ImageData(width, height);
+  const pixels = image.data;
+  for (let i = 0; i < alpha.length; i += 1) {
+    const j = i << 2;
+    pixels[j] = rgb[0];
+    pixels[j + 1] = rgb[1];
+    pixels[j + 2] = rgb[2];
+    pixels[j + 3] = alpha[i];
+  }
+  return image;
+}
+
+function depthToImage(buffer: ArrayBuffer | undefined, width: number, height: number) {
+  if (!buffer) return null;
+  const depth = new Uint8ClampedArray(buffer);
+  const image = new ImageData(width, height);
+  const pixels = image.data;
+  for (let i = 0; i < depth.length; i += 1) {
+    const v = depth[i];
+    const j = i << 2;
+    pixels[j] = Math.min(255, 40 + v * 0.55);
+    pixels[j + 1] = Math.min(255, 96 + v * 0.55);
+    pixels[j + 2] = Math.min(255, 132 + v * 0.65);
+    pixels[j + 3] = Math.min(210, v);
+  }
+  return image;
+}
+
+function toGeometryFrame(payload: WorkerGeometryPayload | undefined): GeometryFrame | null {
+  if (!payload) return null;
+  const { width, height } = payload;
+  return {
+    width,
+    height,
+    signals: payload.signals,
+    edgeMask: alphaToImage(payload.edgeAlphaBuffer, width, height, [230, 255, 238]),
+    motionMask: alphaToImage(payload.motionAlphaBuffer, width, height, [255, 96, 86]),
+    depthMap: depthToImage(payload.depthBuffer, width, height),
+    lineSegments: payload.lineSegmentsBuffer ? new Float32Array(payload.lineSegmentsBuffer) : null,
+    contours: payload.contoursBuffer ? new Float32Array(payload.contoursBuffer) : null,
+  };
+}
 
 export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
   const displayRef = useRef<HTMLCanvasElement>(null);
@@ -72,24 +120,14 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
     setCvStatus('loading');
 
     const store = useConfigStore.getState;
-    const edgeImage = new ImageData(ANALYSIS_W, ANALYSIS_H);
-    const edgePixels = edgeImage.data;
-    for (let i = 0; i < ANALYSIS_W * ANALYSIS_H; i += 1) {
-      const j = i << 2;
-      edgePixels[j] = 255;
-      edgePixels[j + 1] = 255;
-      edgePixels[j + 2] = 255;
-      edgePixels[j + 3] = 0;
-    }
-
     let raf = 0;
     let disposed = false;
     let workerReady = false;
     let analysisPending = false;
     let analysisId = 0;
     let lastAnalysisAt = 0;
-    let latestEdgeImage: ImageData | null = null;
-    let current = store().current;
+    let latestGeometry: GeometryFrame | null = null;
+    let currentStyle = store().currentStyle;
     let latestSignals = store().signals;
     let latestFps = store().fps;
     let frameCount = 0;
@@ -138,12 +176,8 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
         if (typeof message.id !== 'number' || message.id !== analysisId) {
           return;
         }
-        const alpha = new Uint8ClampedArray(message.alphaBuffer);
-        for (let i = 0; i < alpha.length; i += 1) {
-          edgePixels[(i << 2) + 3] = alpha[i];
-        }
-        latestEdgeImage = edgeImage;
-        latestSignals = message.signals ?? latestSignals;
+        latestGeometry = toGeometryFrame(message.geometry);
+        latestSignals = latestGeometry?.signals ?? latestSignals;
         return;
       }
 
@@ -177,7 +211,8 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
-      current = lerpConfig(current, store().target);
+      const state = store();
+      currentStyle = lerpStyleConfig(currentStyle, state.targetStyle);
 
       if (
         workerReady &&
@@ -197,14 +232,19 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
           {
             type: 'analyze',
             id: analysisId,
-            edgeThreshold01: current.edges.threshold,
+            analysisConfig: state.analysis,
             rgbaBuffer: rgba.data.buffer,
           },
           [rgba.data.buffer],
         );
       }
 
-      renderFrame({ video, display, config: current, edges: latestEdgeImage });
+      renderFrame({
+        video,
+        display,
+        style: state.renderMode === 'geometry-preview' ? defaultPreviewStyleConfig : currentStyle,
+        geometry: latestGeometry,
+      });
 
       frameCount++;
       if (now - lastFps >= 500) {
@@ -216,7 +256,7 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
       if (now - lastUiSync >= UI_SYNC_MS) {
         lastUiSync = now;
         useConfigStore.setState({
-          current,
+          currentStyle,
           signals: latestSignals,
           fps: latestFps,
         });
@@ -235,8 +275,11 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
 
   const fps = useConfigStore((s) => s.fps);
   const signals = useConfigStore((s) => s.signals);
+  const renderMode = useConfigStore((s) => s.renderMode);
   const statusLabel = videoReady && cvStatus === 'ready' && !renderError
-    ? 'LIVE'
+    ? renderMode === 'geometry-preview'
+      ? 'GEOMETRY PREVIEW'
+      : 'LIVE'
     : videoError
       ? 'VIDEO ERROR'
       : !videoReady
@@ -273,7 +316,7 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
               }}
             >
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#5a8a50' }} />
-              LIVE
+              {statusLabel}
             </span>
           ) : (
             <span
@@ -310,6 +353,8 @@ export function CanvasRenderer({ videoRef, videoReady, videoError }: Props) {
           <span>FPS {fps.toFixed(0)}</span>
           <span>EDGE {(signals.edgeDensity * 100).toFixed(0)}</span>
           <span>MOTION {(signals.motionAmount * 100).toFixed(0)}</span>
+          <span>LINE {(signals.lineCount * 100).toFixed(0)}</span>
+          <span>CONT {(signals.contourCount * 100).toFixed(0)}</span>
           <span>BRI {(signals.averageBrightness * 100).toFixed(0)}</span>
         </div>
       </header>

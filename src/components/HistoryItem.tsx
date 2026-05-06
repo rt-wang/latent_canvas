@@ -42,7 +42,7 @@ export function HistoryItemRow({
           height: 24,
           borderRadius: 'var(--r-sm)',
           flexShrink: 0,
-          background: tintCss(item.config.palette.tint),
+          background: tintCss(item.style.palette.tint),
           border: '1px solid rgba(0,0,0,0.06)',
           opacity: 0.85,
         }}

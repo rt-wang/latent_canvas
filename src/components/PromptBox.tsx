@@ -5,10 +5,10 @@ import { useConfigStore } from '../state/useConfigStore';
 import { requestConfig } from '../llm/requestConfig';
 
 const SUGGESTIONS = [
-  'make it feel like a memory decaying',
-  'turn this into anxious static',
-  'make the silhouettes feel sacred and slow',
-  'lonely underwater dream',
+  'make the active geometry feel like a memory decaying',
+  'turn these mapped lines into anxious static',
+  'make the contours feel sacred and slow',
+  'lonely underwater depth haze',
 ];
 
 const wrap: CSSProperties = {
@@ -35,7 +35,8 @@ export function PromptBox() {
   const [value, setValue] = useState('');
   const status = useConfigStore((s) => s.status);
   const error = useConfigStore((s) => s.error);
-  const setTarget = useConfigStore((s) => s.setTarget);
+  const renderMode = useConfigStore((s) => s.renderMode);
+  const setTargetStyle = useConfigStore((s) => s.setTargetStyle);
   const setStatus = useConfigStore((s) => s.setStatus);
   const loading = status === 'loading';
 
@@ -44,14 +45,14 @@ export function PromptBox() {
     if (!prompt || loading) return;
     setStatus('loading');
     try {
-      const current = useConfigStore.getState().current;
-      const cfg = await requestConfig(prompt, current);
-      setTarget(cfg, prompt);
+      const { currentStyle, analysis, signals } = useConfigStore.getState();
+      const cfg = await requestConfig(prompt, currentStyle, analysis, signals);
+      setTargetStyle(cfg, prompt);
       setValue('');
     } catch (e) {
       setStatus('error', (e as Error).message);
     }
-  }, [value, loading, setStatus, setTarget]);
+  }, [value, loading, setStatus, setTargetStyle]);
 
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) {
@@ -62,14 +63,14 @@ export function PromptBox() {
 
   return (
     <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--fg-ghost)', background: 'var(--bg-base)' }}>
-      <SectionLabel style={{ marginBottom: 8 }}>New Prompt</SectionLabel>
+      <SectionLabel style={{ marginBottom: 8 }}>{renderMode === 'geometry-preview' ? 'Style Geometry' : 'Refine Style'}</SectionLabel>
       <div style={wrap}>
         <textarea
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={onKey}
           rows={2}
-          placeholder="describe the vibe…"
+          placeholder={renderMode === 'geometry-preview' ? 'choose geometry, then describe how it should feel…' : 'refine the current style…'}
           style={input}
           disabled={loading}
         />

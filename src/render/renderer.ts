@@ -1,34 +1,35 @@
-import type { VibeConfig } from '../llm/schema';
+import type { StyleConfig } from '../llm/schema';
+import type { GeometryFrame } from '../cv/geometry';
 import { applyPalette, tintOverlay } from './effects/palette';
 import { applyTrails } from './effects/trails';
 import { drawEdges } from './effects/edges';
+import { drawLines } from './effects/lines';
+import { drawContours } from './effects/contours';
+import { drawDepthMap, drawVignette } from './effects/depth';
 import { applyPixelation, applyNoise } from './effects/distortion';
 
 export type RenderInput = {
   video: HTMLVideoElement;
   display: HTMLCanvasElement;
-  config: VibeConfig;
-  edges: ImageData | null;
+  style: StyleConfig;
+  geometry: GeometryFrame | null;
 };
 
 export function renderFrame(input: RenderInput) {
-  const { video, display, config, edges } = input;
+  const { video, display, style, geometry } = input;
   const dctx = display.getContext('2d');
   if (!dctx) return;
 
-  // Mirror the webcam (selfie-style) so motion feels natural.
   const dw = display.width;
   const dh = display.height;
 
-  // 1. display: trails fade
-  applyTrails(dctx, dw, dh, config.motion.trailLength);
+  applyTrails(dctx, dw, dh, style.motion.trailLength);
 
-  // 2. video draw with palette filter
   dctx.save();
-  applyPalette(dctx, config.palette);
+  dctx.globalAlpha = Math.min(1, style.layers.sourceOpacity * style.composition.opacity);
+  applyPalette(dctx, style.palette);
   dctx.setTransform(-1, 0, 0, 1, dw, 0);
-  // motion blur (CSS filter blur)
-  const blurPx = config.motion.blur * 12;
+  const blurPx = style.motion.blur * 12 + style.vibe.softness * 2;
   if (blurPx > 0.1) {
     dctx.filter = `${dctx.filter} blur(${blurPx.toFixed(2)}px)`;
   }
@@ -36,17 +37,29 @@ export function renderFrame(input: RenderInput) {
   dctx.restore();
   dctx.filter = 'none';
 
-  // 3. tint overlay (multiply)
-  tintOverlay(dctx, dw, dh, config.palette);
+  tintOverlay(dctx, dw, dh, style.palette);
 
-  // 4. edges (screen blend)
-  if (config.edges.enabled && edges) {
-    drawEdges(dctx, edges, dw, dh, config.edges.glow);
+  if (geometry?.depthMap) {
+    drawDepthMap(dctx, geometry.depthMap, dw, dh, style.layers.depthFog);
   }
 
-  // 5. noise
-  applyNoise(dctx, dw, dh, config.distortion.noise);
+  if (geometry?.edgeMask) {
+    drawEdges(dctx, geometry.edgeMask, dw, dh, style.layers.edgeGlow);
+  }
 
-  // 6. pixelation (last so it acts on the composite)
-  applyPixelation(dctx, dw, dh, config.distortion.pixelation);
+  if (geometry?.motionMask) {
+    drawEdges(dctx, geometry.motionMask, dw, dh, Math.min(0.8, 0.15 + style.vibe.chaoticness * 0.65));
+  }
+
+  if (geometry?.contours) {
+    drawContours(dctx, geometry.contours, geometry.width, geometry.height, dw, dh, style);
+  }
+
+  if (geometry?.lineSegments) {
+    drawLines(dctx, geometry.lineSegments, geometry.width, geometry.height, dw, dh, style);
+  }
+
+  applyNoise(dctx, dw, dh, Math.min(1, style.distortion.noise + style.vibe.chaoticness * 0.12));
+  applyPixelation(dctx, dw, dh, style.distortion.pixelation);
+  drawVignette(dctx, dw, dh, style.composition.vignette);
 }

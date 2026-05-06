@@ -1,21 +1,32 @@
 import { useState, type ReactNode } from 'react';
 import { useConfigStore } from '../state/useConfigStore';
 import { Button } from './ui/Button';
-import { defaultConfig } from '../state/defaultConfig';
+import { defaultAnalysisConfig } from '../state/defaultConfig';
+import type { AnalysisConfig } from '../llm/schema';
 
-type SectionKey = 'PALETTE' | 'MOTION' | 'EDGES' | 'DISTORTION';
+type SectionKey = 'ANALYSIS' | 'PALETTE' | 'MOTION' | 'VIBE' | 'LAYERS' | 'DISTORTION' | 'COMPOSITION';
 
 export function ConfigInspector() {
-  const current = useConfigStore((s) => s.current);
-  const target = useConfigStore((s) => s.target);
-  const setTarget = useConfigStore((s) => s.setTarget);
+  const currentStyle = useConfigStore((s) => s.currentStyle);
+  const targetStyle = useConfigStore((s) => s.targetStyle);
+  const analysis = useConfigStore((s) => s.analysis);
+  const renderMode = useConfigStore((s) => s.renderMode);
+  const setAnalysis = useConfigStore((s) => s.setAnalysis);
+  const setTargetStyle = useConfigStore((s) => s.setTargetStyle);
+  const resetStyle = useConfigStore((s) => s.resetStyle);
   const signals = useConfigStore((s) => s.signals);
   const [tab, setTab] = useState<'JSON' | 'SIGNALS'>('JSON');
+
+  const setAnalysisGroup = <K extends keyof AnalysisConfig>(key: K, value: AnalysisConfig[K]) => {
+    setAnalysis({ ...analysis, [key]: value });
+  };
+
+  const session = { analysis, style: currentStyle, renderMode };
 
   return (
     <aside
       style={{
-        width: 260,
+        width: 292,
         background: 'var(--bg-base)',
         borderLeft: '1px solid var(--fg-ghost)',
         display: 'flex',
@@ -33,72 +44,237 @@ export function ConfigInspector() {
           alignItems: 'center',
         }}
       >
-        <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--fg-primary)', letterSpacing: '0.04em' }}>
-          CONFIG INSPECTOR
-        </span>
-        <Button variant="ghost" size="sm" onClick={() => setTarget(defaultConfig)}>
+        <div>
+          <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--fg-primary)', letterSpacing: '0.04em' }}>
+            GEOMETRY RACK
+          </span>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--fg-muted)', marginTop: 2 }}>
+            {renderMode === 'geometry-preview' ? 'GEOMETRY PREVIEW' : 'STYLED OUTPUT'}
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setAnalysis(defaultAnalysisConfig);
+            resetStyle();
+          }}
+        >
           Reset
         </Button>
       </div>
 
       <div style={{ flex: 1, overflow: 'auto' }}>
+        <Section title="ANALYSIS" defaultOpen>
+          <ToggleRow
+            label="Edges"
+            value={analysis.edges.enabled}
+            onChange={(enabled) => setAnalysisGroup('edges', { ...analysis.edges, enabled })}
+          />
+          <SliderRow
+            label="Edge Threshold"
+            value={analysis.edges.threshold}
+            onChange={(threshold) => setAnalysisGroup('edges', { ...analysis.edges, threshold })}
+          />
+          <SliderRow
+            label="Edge Blur"
+            value={analysis.edges.blur}
+            onChange={(blur) => setAnalysisGroup('edges', { ...analysis.edges, blur })}
+          />
+          <ToggleRow
+            label="Fast Lines"
+            value={analysis.lines.enabled}
+            onChange={(enabled) => setAnalysisGroup('lines', { ...analysis.lines, enabled })}
+          />
+          <SliderRow
+            label="Line Threshold"
+            value={analysis.lines.threshold}
+            onChange={(threshold) => setAnalysisGroup('lines', { ...analysis.lines, threshold })}
+          />
+          <SliderRow
+            label="Min Length"
+            value={analysis.lines.minLength}
+            onChange={(minLength) => setAnalysisGroup('lines', { ...analysis.lines, minLength })}
+          />
+          <ToggleRow
+            label="Contours"
+            value={analysis.contours.enabled}
+            onChange={(enabled) => setAnalysisGroup('contours', { ...analysis.contours, enabled })}
+          />
+          <SliderRow
+            label="Contour Area"
+            value={analysis.contours.minArea}
+            onChange={(minArea) => setAnalysisGroup('contours', { ...analysis.contours, minArea })}
+          />
+          <SliderRow
+            label="Simplify"
+            value={analysis.contours.simplify}
+            onChange={(simplify) => setAnalysisGroup('contours', { ...analysis.contours, simplify })}
+          />
+          <ToggleRow
+            label="Motion Mask"
+            value={analysis.motion.enabled}
+            onChange={(enabled) => setAnalysisGroup('motion', { ...analysis.motion, enabled })}
+          />
+          <SliderRow
+            label="Persistence"
+            value={analysis.motion.persistence}
+            onChange={(persistence) => setAnalysisGroup('motion', { ...analysis.motion, persistence })}
+          />
+          <ToggleRow
+            label="Depth"
+            value={analysis.depth.enabled}
+            onChange={(enabled) => setAnalysisGroup('depth', { ...analysis.depth, enabled })}
+          />
+          <SelectRow
+            label="Depth Mode"
+            value={analysis.depth.mode}
+            options={['pseudo', 'ml'] as const}
+            onChange={(mode) => setAnalysisGroup('depth', { ...analysis.depth, mode })}
+          />
+          <SliderRow
+            label="Depth Strength"
+            value={analysis.depth.strength}
+            onChange={(strength) => setAnalysisGroup('depth', { ...analysis.depth, strength })}
+          />
+        </Section>
+
         <Section title="PALETTE" defaultOpen>
-          <TintRow tint={current.palette.tint} />
+          <TintRow tint={currentStyle.palette.tint} />
           <SliderRow
             label="Saturation"
-            value={current.palette.saturation}
-            onChange={(v) => setTarget({ ...target, palette: { ...target.palette, saturation: v } })}
+            value={currentStyle.palette.saturation}
+            onChange={(saturation) => setTargetStyle({ ...targetStyle, palette: { ...targetStyle.palette, saturation } })}
           />
           <SliderRow
             label="Contrast"
-            value={current.palette.contrast}
-            onChange={(v) => setTarget({ ...target, palette: { ...target.palette, contrast: v } })}
+            value={currentStyle.palette.contrast}
+            onChange={(contrast) => setTargetStyle({ ...targetStyle, palette: { ...targetStyle.palette, contrast } })}
           />
           <SliderRow
             label="Brightness"
-            value={current.palette.brightness}
-            onChange={(v) => setTarget({ ...target, palette: { ...target.palette, brightness: v } })}
+            value={currentStyle.palette.brightness}
+            onChange={(brightness) => setTargetStyle({ ...targetStyle, palette: { ...targetStyle.palette, brightness } })}
           />
         </Section>
-        <Section title="MOTION" defaultOpen>
+        <Section title="MOTION">
           <SliderRow
             label="Trail Length"
-            value={current.motion.trailLength}
-            onChange={(v) => setTarget({ ...target, motion: { ...target.motion, trailLength: v } })}
+            value={currentStyle.motion.trailLength}
+            onChange={(trailLength) => setTargetStyle({ ...targetStyle, motion: { ...targetStyle.motion, trailLength } })}
           />
           <SliderRow
             label="Blur"
-            value={current.motion.blur}
-            onChange={(v) => setTarget({ ...target, motion: { ...target.motion, blur: v } })}
+            value={currentStyle.motion.blur}
+            onChange={(blur) => setTargetStyle({ ...targetStyle, motion: { ...targetStyle.motion, blur } })}
           />
         </Section>
-        <Section title="EDGES">
-          <ToggleRow
-            label="Enabled"
-            value={current.edges.enabled}
-            onChange={(v) => setTarget({ ...target, edges: { ...target.edges, enabled: v } })}
+        <Section title="VIBE">
+          <SliderRow
+            label="Chaoticness"
+            value={currentStyle.vibe.chaoticness}
+            onChange={(chaoticness) => setTargetStyle({ ...targetStyle, vibe: { ...targetStyle.vibe, chaoticness } })}
           />
           <SliderRow
-            label="Threshold"
-            value={current.edges.threshold}
-            onChange={(v) => setTarget({ ...target, edges: { ...target.edges, threshold: v } })}
+            label="Softness"
+            value={currentStyle.vibe.softness}
+            onChange={(softness) => setTargetStyle({ ...targetStyle, vibe: { ...targetStyle.vibe, softness } })}
           />
           <SliderRow
-            label="Glow"
-            value={current.edges.glow}
-            onChange={(v) => setTarget({ ...target, edges: { ...target.edges, glow: v } })}
+            label="Density"
+            value={currentStyle.vibe.density}
+            onChange={(density) => setTargetStyle({ ...targetStyle, vibe: { ...targetStyle.vibe, density } })}
+          />
+        </Section>
+        <Section title="LAYERS">
+          <SliderRow
+            label="Source"
+            value={currentStyle.layers.sourceOpacity}
+            onChange={(sourceOpacity) =>
+              setTargetStyle({ ...targetStyle, layers: { ...targetStyle.layers, sourceOpacity } })
+            }
+          />
+          <SliderRow
+            label="Edge Glow"
+            value={currentStyle.layers.edgeGlow}
+            onChange={(edgeGlow) => setTargetStyle({ ...targetStyle, layers: { ...targetStyle.layers, edgeGlow } })}
+          />
+          <SliderRow
+            label="Line Weight"
+            value={currentStyle.layers.lineWeight}
+            onChange={(lineWeight) => setTargetStyle({ ...targetStyle, layers: { ...targetStyle.layers, lineWeight } })}
+          />
+          <SliderRow
+            label="Line Glow"
+            value={currentStyle.layers.lineGlow}
+            onChange={(lineGlow) => setTargetStyle({ ...targetStyle, layers: { ...targetStyle.layers, lineGlow } })}
+          />
+          <SliderRow
+            label="Contour Stroke"
+            value={currentStyle.layers.contourStroke}
+            onChange={(contourStroke) =>
+              setTargetStyle({ ...targetStyle, layers: { ...targetStyle.layers, contourStroke } })
+            }
+          />
+          <SliderRow
+            label="Contour Fill"
+            value={currentStyle.layers.contourFill}
+            onChange={(contourFill) =>
+              setTargetStyle({ ...targetStyle, layers: { ...targetStyle.layers, contourFill } })
+            }
+          />
+          <SliderRow
+            label="Depth Fog"
+            value={currentStyle.layers.depthFog}
+            onChange={(depthFog) => setTargetStyle({ ...targetStyle, layers: { ...targetStyle.layers, depthFog } })}
           />
         </Section>
         <Section title="DISTORTION">
           <SliderRow
             label="Noise"
-            value={current.distortion.noise}
-            onChange={(v) => setTarget({ ...target, distortion: { ...target.distortion, noise: v } })}
+            value={currentStyle.distortion.noise}
+            onChange={(noise) => setTargetStyle({ ...targetStyle, distortion: { ...targetStyle.distortion, noise } })}
           />
           <SliderRow
             label="Pixelation"
-            value={current.distortion.pixelation}
-            onChange={(v) => setTarget({ ...target, distortion: { ...target.distortion, pixelation: v } })}
+            value={currentStyle.distortion.pixelation}
+            onChange={(pixelation) =>
+              setTargetStyle({ ...targetStyle, distortion: { ...targetStyle.distortion, pixelation } })
+            }
+          />
+          <SliderRow
+            label="Wave"
+            value={currentStyle.distortion.wave}
+            onChange={(wave) => setTargetStyle({ ...targetStyle, distortion: { ...targetStyle.distortion, wave } })}
+          />
+          <SliderRow
+            label="Displace"
+            value={currentStyle.distortion.displacement}
+            onChange={(displacement) =>
+              setTargetStyle({ ...targetStyle, distortion: { ...targetStyle.distortion, displacement } })
+            }
+          />
+        </Section>
+        <Section title="COMPOSITION">
+          <SelectRow
+            label="Blend"
+            value={currentStyle.composition.blendMode}
+            options={['normal', 'screen', 'multiply', 'difference', 'overlay'] as const}
+            onChange={(blendMode) =>
+              setTargetStyle({ ...targetStyle, composition: { ...targetStyle.composition, blendMode } })
+            }
+          />
+          <SliderRow
+            label="Opacity"
+            value={currentStyle.composition.opacity}
+            onChange={(opacity) => setTargetStyle({ ...targetStyle, composition: { ...targetStyle.composition, opacity } })}
+          />
+          <SliderRow
+            label="Vignette"
+            value={currentStyle.composition.vignette}
+            onChange={(vignette) =>
+              setTargetStyle({ ...targetStyle, composition: { ...targetStyle.composition, vignette } })
+            }
           />
         </Section>
       </div>
@@ -134,28 +310,28 @@ export function ConfigInspector() {
             fontSize: 9.5,
             color: 'var(--fg-secondary)',
             lineHeight: 1.6,
-            maxHeight: 160,
+            maxHeight: 168,
             overflow: 'auto',
           }}
         >
           {tab === 'JSON' ? (
             <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0 }}>
-              {JSON.stringify(current, null, 2)}
+              {JSON.stringify(session, null, 2)}
             </pre>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               <div>edgeDensity: {signals.edgeDensity.toFixed(3)}</div>
               <div>motionAmount: {signals.motionAmount.toFixed(3)}</div>
               <div>brightness: {signals.averageBrightness.toFixed(3)}</div>
+              <div>lineCount: {signals.lineCount.toFixed(3)}</div>
+              <div>contourCount: {signals.contourCount.toFixed(3)}</div>
+              <div>depthMean: {signals.depthMean.toFixed(3)}</div>
+              <div>sceneStability: {signals.sceneStability.toFixed(3)}</div>
             </div>
           )}
         </div>
         <div style={{ padding: '4px 10px 8px', display: 'flex', justifyContent: 'flex-end' }}>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => navigator.clipboard?.writeText(JSON.stringify(current, null, 2))}
-          >
+          <Button variant="ghost" size="sm" onClick={() => navigator.clipboard?.writeText(JSON.stringify(session, null, 2))}>
             Copy JSON
           </Button>
         </div>
@@ -207,7 +383,7 @@ function SliderRow({
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <span style={{ fontSize: 12, color: 'var(--fg-secondary)', width: 100, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12, color: 'var(--fg-secondary)', width: 112, flexShrink: 0 }}>{label}</span>
       <input
         type="range"
         min={0}
@@ -236,7 +412,7 @@ function SliderRow({
 function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <span style={{ fontSize: 12, color: 'var(--fg-secondary)', width: 100, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12, color: 'var(--fg-secondary)', width: 112, flexShrink: 0 }}>{label}</span>
       <div
         onClick={() => onChange(!value)}
         style={{
@@ -271,8 +447,47 @@ function ToggleRow({ label, value, onChange }: { label: string; value: boolean; 
           color: value ? 'var(--accent)' : 'var(--fg-muted)',
         }}
       >
-        {value ? 'true' : 'false'}
+        {value ? 'on' : 'off'}
       </span>
+    </div>
+  );
+}
+
+function SelectRow<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly T[];
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ fontSize: 12, color: 'var(--fg-secondary)', width: 112, flexShrink: 0 }}>{label}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontFamily: 'var(--font-ui)',
+          fontSize: 12,
+          color: 'var(--fg-secondary)',
+          background: 'var(--bg-overlay)',
+          border: '1px solid var(--fg-ghost)',
+          borderRadius: 'var(--r-sm)',
+          padding: '3px 6px',
+        }}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
